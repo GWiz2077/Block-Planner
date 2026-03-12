@@ -941,20 +941,6 @@
 
   document.head.appendChild(script);
 }
-      const script = document.createElement("script");
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
-      script.async = true;
-      script.defer = true;
-      script.onload = () => {
-        state.mapsReady = true;
-        els.mapsStatus.textContent = "Google Maps loaded.";
-        attachAutocomplete();
-      };
-      script.onerror = () => {
-        els.mapsStatus.textContent = "Google Maps failed to load.";
-      };
-      document.head.appendChild(script);
-    }
 
     function requestNotificationPermission() {
       if (typeof Notification === "undefined") {

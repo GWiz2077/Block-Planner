@@ -1,689 +1,1033 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-
-const GOOGLE_MAPS_API_KEY = "PASTE_YOUR_GOOGLE_MAPS_API_KEY_HERE";
-const DAY_MINUTES = 24 * 60;
-const MAX_PRESETS = 25;
-const STORAGE_KEYS = {
-  obligations: "planner-obligations-v2",
-  presets: "planner-presets-v2",
-  settings: "planner-settings-v1",
-};
-
-function parseTime(value) {
-  const trimmed = String(value || "").trim().toLowerCase();
-  const match = trimmed.match(/^(\d{1,2})(?::?(\d{2}))?\s*(am|pm)?$/i);
-  if (!match) return null;
-  let hour = Number(match[1]);
-  const minute = Number(match[2] || 0);
-  const suffix = match[3];
-  if (minute > 59) return null;
-  if (suffix) {
-    if (hour < 1 || hour > 12) return null;
-    if (suffix === "am") {
-      if (hour === 12) hour = 0;
-    } else if (hour !== 12) {
-      hour += 12;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Block Planner</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --panel: #18181b;
+      --panel-2: #27272a;
+      --line: #3f3f46;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --red: #ef4444;
+      --orange: #f97316;
+      --green: #22c55e;
+      --blue: #3b82f6;
+      --slot: #52525b;
     }
-  } else if (hour > 23) {
-    return null;
-  }
-  return hour * 60 + minute;
-}
 
-function toTimeInput(minutes) {
-  const h = Math.floor(minutes / 60) % 24;
-  const m = minutes % 60;
-  return `${String(h).padStart(2, "0")}${String(m).padStart(2, "0")}`;
-}
-
-function formatMinutes(total) {
-  const normalized = ((total % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
-  const h24 = Math.floor(normalized / 60);
-  const m = normalized % 60;
-  const suffix = h24 >= 12 ? "PM" : "AM";
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
-}
-
-function durationBetween(start, end) {
-  if (start == null || end == null) return null;
-  return end >= start ? end - start : DAY_MINUTES - start + end;
-}
-
-function uid() {
-  try {
-    return crypto.randomUUID();
-  } catch {
-    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  }
-}
-
-function loadLocal(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveLocal(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {}
-}
-
-function loadGoogleMaps(apiKey, onReady, onError) {
-  if (typeof window === "undefined") return;
-  if (window.google?.maps?.places) {
-    onReady();
-    return;
-  }
-  const existing = document.querySelector('script[data-google-maps-loader="true"]');
-  if (existing) {
-    existing.addEventListener("load", onReady, { once: true });
-    existing.addEventListener("error", onError, { once: true });
-    return;
-  }
-  const script = document.createElement("script");
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
-  script.async = true;
-  script.defer = true;
-  script.dataset.googleMapsLoader = "true";
-  script.addEventListener("load", onReady, { once: true });
-  script.addEventListener("error", onError, { once: true });
-  document.head.appendChild(script);
-}
-
-function normalize(v) {
-  return String(v || "").trim().toLowerCase();
-}
-
-function routeKeys({ loc1, loc2, name1, name2, mot }) {
-  const a1 = normalize(loc1);
-  const a2 = normalize(loc2);
-  const n1 = normalize(name1);
-  const n2 = normalize(name2);
-  const m = normalize(mot);
-  const keys = [];
-  if (a1 && a2 && m) keys.push(`aa|${a1}|${a2}|${m}`, `aa|${a2}|${a1}|${m}`);
-  if (a1 && n2 && m) keys.push(`an|${a1}|${n2}|${m}`, `na|${n2}|${a1}|${m}`);
-  if (n1 && a2 && m) keys.push(`na|${n1}|${a2}|${m}`, `an|${a2}|${n1}|${m}`);
-  if (n1 && n2 && m) keys.push(`nn|${n1}|${n2}|${m}`, `nn|${n2}|${n1}|${m}`);
-  return [...new Set(keys)];
-}
-
-function presetMatches(preset, query) {
-  const qKeys = routeKeys(query);
-  const pKeys = routeKeys(preset);
-  return qKeys.some((k) => pKeys.includes(k));
-}
-
-function findPreset(presets, query) {
-  return presets.find((p) => presetMatches(p, query)) || null;
-}
-
-function getBlockRows(obligations) {
-  const blocks = [];
-  for (const ob of obligations) {
-    if (ob.commuteMode === "pre" || ob.commuteMode === "both") {
-      const start = ((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES;
-      blocks.push({
-        id: `${ob.id}-pre`,
-        ownerId: ob.id,
-        linked: true,
-        type: "commute",
-        title: "Commute",
-        color: "bg-orange-500 border-orange-300/50",
-        start,
-        end: ob.start,
-        meta: `${ob.loc1 || ob.name1 || "Start"} → ${ob.loc2 || ob.name2 || "End"}`,
-      });
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
     }
-    blocks.push({
-      id: ob.id,
-      ownerId: ob.id,
-      linked: false,
-      type: "obligation",
-      title: ob.title,
-      color: "bg-red-500 border-red-300/50",
-      start: ob.start,
-      end: ob.end,
-      meta: ob.place || "Obligation",
-    });
-    if (ob.commuteMode === "post" || ob.commuteMode === "both") {
-      blocks.push({
-        id: `${ob.id}-post`,
-        ownerId: ob.id,
-        linked: true,
-        type: "commute",
-        title: "Commute",
-        color: "bg-orange-500 border-orange-300/50",
-        start: ob.end,
-        end: (ob.end + ob.commuteMinutes) % DAY_MINUTES,
-        meta: `${ob.loc1 || ob.name1 || "Start"} → ${ob.loc2 || ob.name2 || "End"}`,
-      });
+
+    .wrap {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px;
     }
-  }
-  return blocks;
-}
 
-function rangesForBlock(block) {
-  if (block.end >= block.start) return [{ ...block, actualStart: block.start, actualEnd: block.end }];
-  return [
-    { ...block, actualStart: block.start, actualEnd: DAY_MINUTES },
-    { ...block, actualStart: 0, actualEnd: block.end },
-  ];
-}
+    .topbar, .panel {
+      background: var(--panel);
+      border: 1px solid #27272a;
+      border-radius: 24px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.35);
+    }
 
-function overlaps(a, b) {
-  return a.actualStart < b.actualEnd && b.actualStart < a.actualEnd;
-}
+    .topbar {
+      padding: 20px;
+      margin-bottom: 20px;
+      display: grid;
+      gap: 18px;
+      grid-template-columns: 1.3fr 1fr;
+    }
 
-function Modal({ open, title, children, onClose, wide = false }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className={`w-full ${wide ? "max-w-5xl" : "max-w-xl"} rounded-3xl border border-zinc-700 bg-zinc-900 shadow-2xl`}>
-        <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
-          <h2 className="text-xl font-semibold text-white">{title}</h2>
-          <button onClick={onClose} className="rounded-xl border border-zinc-700 px-3 py-1 text-zinc-300 hover:border-zinc-500">Close</button>
+    .grid {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 400px 1fr;
+      align-items: start;
+    }
+
+    .panel { padding: 20px; }
+    h1,h2,h3,p { margin: 0; }
+    .eyebrow {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .2em;
+      margin-bottom: 10px;
+    }
+    .subtitle { color: var(--muted); margin-top: 8px; line-height: 1.45; }
+
+    .api-box {
+      background: #0f0f12;
+      border: 1px solid #27272a;
+      border-radius: 18px;
+      padding: 14px;
+      font-size: 14px;
+    }
+    .api-code {
+      display: block;
+      margin-top: 10px;
+      background: #111114;
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: #fca5a5;
+      overflow-x: auto;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .stack { display: grid; gap: 16px; }
+    .two { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+    .three { display: grid; gap: 12px; grid-template-columns: 1fr 1fr 1fr; }
+    .four { display: grid; gap: 12px; grid-template-columns: repeat(4, 1fr); }
+
+    label { display: block; }
+    .label {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+    input, select, button, textarea {
+      font: inherit;
+    }
+    input, select {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: #09090b;
+      color: var(--text);
+      outline: none;
+    }
+    input:focus, select:focus { border-color: var(--red); }
+
+    button {
+      border: 1px solid var(--line);
+      background: #09090b;
+      color: var(--text);
+      padding: 12px 14px;
+      border-radius: 16px;
+      cursor: pointer;
+      transition: .15s ease;
+    }
+    button:hover { border-color: #71717a; }
+    .btn-primary { background: var(--red); border-color: var(--red); }
+    .btn-primary:hover { filter: brightness(1.05); }
+    .btn-blue { background: var(--blue); border-color: var(--blue); }
+    .btn-orange { background: var(--orange); border-color: var(--orange); }
+    .btn-green { background: var(--green); border-color: var(--green); color: #03130a; font-weight: 700; }
+
+    .info-box, .message {
+      background: #111114;
+      border: 1px solid #27272a;
+      border-radius: 18px;
+      padding: 14px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .message { color: var(--text); min-height: 48px; }
+
+    .timeline-shell {
+      background: linear-gradient(180deg, #18181b 0%, #111114 100%);
+      border: 1px solid #27272a;
+      border-radius: 24px;
+      padding: 20px;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(96, 1fr);
+      gap: 2px;
+      background: #27272a;
+      padding: 2px;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .slot {
+      height: 52px;
+      background: var(--slot);
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      min-width: 0;
+    }
+    .slot.obligation { background: var(--red); }
+    .slot.commute { background: var(--orange); }
+    .slot.empty { background: #5b5b66; }
+
+    .tickrow {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 8px 2px 0;
+    }
+
+    .list-card {
+      background: #111114;
+      border: 1px solid #27272a;
+      border-radius: 18px;
+      padding: 14px;
+      display: grid;
+      gap: 6px;
+    }
+    .list-card button { margin-top: 6px; }
+    .muted { color: var(--muted); }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.62);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 50;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: min(100%, 1100px);
+      background: var(--panel);
+      border: 1px solid #27272a;
+      border-radius: 24px;
+      box-shadow: 0 18px 40px rgba(0,0,0,.45);
+      overflow: hidden;
+    }
+    .modal.small { max-width: 560px; }
+    .modal-header {
+      padding: 18px 20px;
+      border-bottom: 1px solid #27272a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .modal-body { padding: 20px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border-bottom: 1px solid #27272a;
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: middle;
+    }
+    th { color: var(--muted); font-weight: 600; }
+    td input, td select { border-radius: 12px; padding: 9px 10px; }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #27272a;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 980px) {
+      .topbar, .grid { grid-template-columns: 1fr; }
+      .two, .three, .four { grid-template-columns: 1fr; }
+      .timeline { grid-template-columns: repeat(48, 1fr); }
+      .slot { height: 42px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div>
+        <div class="eyebrow">Daily planner</div>
+        <h1>Obligations and commute bar</h1>
+        <p class="subtitle">This version is plain <code>index.html</code> so GitHub Pages can run it directly. Google autocomplete and route lookup should work after you add your API key and host it.</p>
+      </div>
+      <div class="api-box">
+        <div><strong>API key location</strong></div>
+        <span class="api-code">const GOOGLE_MAPS_API_KEY = "AIzaSyAi0WB8FSMlhrqllD4iI8A31oWlICFOa3o";</span>
+        <div id="mapsStatus" class="subtitle" style="margin-top:10px;">Google Maps inactive until you replace the placeholder key.</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="panel stack">
+        <label>
+          <div class="label">What are you doing?</div>
+          <input id="titleInput" placeholder="Work, class, lab..." />
+        </label>
+        <label>
+          <div class="label">Where is it?</div>
+          <input id="placeInput" placeholder="Optional place label" />
+        </label>
+        <div class="two">
+          <label>
+            <div class="label">Start time</div>
+            <input id="startInput" value="0900" placeholder="0900 or 9:00 AM" />
+          </label>
+          <label>
+            <div class="label">End time</div>
+            <input id="endInput" value="1700" placeholder="1700 or 5:00 PM" />
+          </label>
         </div>
-        <div className="p-6">{children}</div>
-      </div>
-    </div>
-  );
-}
 
-function LabeledInput({ label, inputRef, className = "", ...props }) {
-  return (
-    <label className="block">
-      <div className="mb-1 text-sm text-zinc-400">{label}</div>
-      <input ref={inputRef} {...props} className={`w-full rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-red-500 ${className}`} />
-    </label>
-  );
-}
+        <div id="mainInfo" class="info-box">Enter valid times.</div>
+        <div id="message" class="message"></div>
 
-function Timeline({ obligations, onSelect }) {
-  const blocks = getBlockRows(obligations);
-  return (
-    <div className="space-y-2">
-      <div className="flex h-14 w-full overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-800">
-        {Array.from({ length: 96 }).map((_, i) => {
-          const slotStart = i * 15;
-          const slotEnd = slotStart + 15;
-          const covering = blocks.find((block) =>
-            rangesForBlock(block).some((r) => r.actualStart < slotEnd && slotStart < r.actualEnd)
-          );
-          return (
-            <button
-              key={i}
-              onClick={() => covering && onSelect(covering.ownerId)}
-              className={`h-full flex-1 border-r border-zinc-700/70 ${covering ? covering.color : "bg-zinc-700/70"} ${covering ? "hover:brightness-110" : ""}`}
-              title={covering ? `${covering.title} · ${covering.meta}` : `${formatMinutes(slotStart)}–${formatMinutes(slotEnd % DAY_MINUTES)}`}
-            />
-          );
-        })}
-      </div>
-      <div className="flex justify-between px-1 text-xs text-zinc-400">
-        <span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span>
-      </div>
-    </div>
-  );
-}
-
-function PresetTable({ presets, onUpdate, onDelete }) {
-  return (
-    <div className="space-y-3">
-      {presets.length === 0 ? <div className="text-zinc-500">No presets yet.</div> : presets.map((p) => (
-        <div key={p.id} className="grid gap-2 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4 md:grid-cols-7">
-          <input value={p.loc1} onChange={(e) => onUpdate(p.id, { loc1: e.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2" placeholder="Loc 1" />
-          <input value={p.name1} onChange={(e) => onUpdate(p.id, { name1: e.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2" placeholder="Name 1" />
-          <input value={p.loc2} onChange={(e) => onUpdate(p.id, { loc2: e.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2" placeholder="Loc 2" />
-          <input value={p.name2} onChange={(e) => onUpdate(p.id, { name2: e.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2" placeholder="Name 2" />
-          <select value={p.mot} onChange={(e) => onUpdate(p.id, { mot: e.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2">
-            <option>Driving</option><option>Walking</option><option>Bicycling</option><option>Transit</option>
-          </select>
-          <input value={String(p.timeMinutes)} onChange={(e) => onUpdate(p.id, { timeMinutes: Number(e.target.value) || 0 })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2" placeholder="Minutes" />
-          <button onClick={() => onDelete(p.id)} className="rounded-xl border border-zinc-700 px-3 py-2 text-zinc-300 hover:border-zinc-500">Delete</button>
+        <div class="three">
+          <button id="saveBtn" class="btn-primary">Save</button>
+          <button id="saveCommuteBtn">Save with commute</button>
+          <button id="settingsBtn">Settings</button>
         </div>
-      ))}
+      </div>
+
+      <div class="stack">
+        <div class="timeline-shell">
+          <div class="eyebrow">Output</div>
+          <h2 style="margin-bottom:8px;">Bar graph</h2>
+          <p class="subtitle" style="margin-bottom:16px;">Grey slots, red obligations, orange commutes. Click any colored slot to edit or remove the linked obligation.</p>
+          <div id="timeline" class="timeline"></div>
+          <div class="tickrow"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span></div>
+        </div>
+
+        <div class="panel">
+          <h3 style="margin-bottom:14px;">Saved obligations</h3>
+          <div id="obligationList" class="stack"></div>
+        </div>
+      </div>
     </div>
-  );
-}
+  </div>
 
-export default function TimeSlotPlannerApp() {
-  const [obligations, setObligations] = useState(() => loadLocal(STORAGE_KEYS.obligations, []));
-  const [presets, setPresets] = useState(() => loadLocal(STORAGE_KEYS.presets, []));
-  const [settings, setSettings] = useState(() => loadLocal(STORAGE_KEYS.settings, {
-    notificationsEnabled: false,
-    notifyLead: "30",
-    notifyTarget: "event",
-  }));
-  const [mapsReady, setMapsReady] = useState(false);
-  const [mapsError, setMapsError] = useState("");
-  const [message, setMessage] = useState("");
+  <div id="commuteModalWrap" class="modal-backdrop">
+    <div class="modal small">
+      <div class="modal-header">
+        <h2>Save with commute</h2>
+        <button data-close="commuteModalWrap">Close</button>
+      </div>
+      <div class="modal-body stack">
+        <div class="two">
+          <label><div class="label">Loc 1</div><input id="loc1Input" placeholder="Start address" /></label>
+          <label><div class="label">Loc 2</div><input id="loc2Input" placeholder="End address" /></label>
+        </div>
+        <div class="two">
+          <label><div class="label">Name 1</div><input id="name1Input" placeholder="Optional nickname" /></label>
+          <label><div class="label">Name 2</div><input id="name2Input" placeholder="Optional nickname" /></label>
+        </div>
+        <div class="two">
+          <label>
+            <div class="label">Method of transportation</div>
+            <select id="motInput">
+              <option>Driving</option>
+              <option>Walking</option>
+              <option>Bicycling</option>
+              <option>Transit</option>
+            </select>
+          </label>
+          <label><div class="label">Time (minutes)</div><input id="timeInput" placeholder="Filled by API or manual" /></label>
+        </div>
+        <div class="three">
+          <button id="commuteSaveBtn" class="btn-primary">Save</button>
+          <button id="presetBtn">Preset</button>
+          <button id="apiBtn">API</button>
+        </div>
+        <p class="subtitle">Preset matching stores up to 8 route key combinations when all four commute fields are provided.</p>
+      </div>
+    </div>
+  </div>
 
-  const [title, setTitle] = useState("");
-  const [startText, setStartText] = useState("0900");
-  const [endText, setEndText] = useState("1700");
-  const [place, setPlace] = useState("");
+  <div id="modeModalWrap" class="modal-backdrop">
+    <div class="modal small">
+      <div class="modal-header">
+        <h2>Where should the commute go?</h2>
+        <button data-close="modeModalWrap">Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="four">
+          <button id="preBtn" class="btn-blue">Pre commute</button>
+          <button id="postBtn" class="btn-green">Post commute</button>
+          <button id="bothBtn" class="btn-orange">Both</button>
+          <button data-close="modeModalWrap">Nevermind</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
-  const [selectedId, setSelectedId] = useState(null);
-  const [saveCommuteOpen, setSaveCommuteOpen] = useState(false);
-  const [saveModeOpen, setSaveModeOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  <div id="settingsModalWrap" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button data-close="settingsModalWrap">Close</button>
+      </div>
+      <div class="modal-body stack">
+        <div class="panel" style="padding:16px; background:#111114;">
+          <div class="four">
+            <label>
+              <div class="label">Notifications enabled</div>
+              <select id="notifEnabled">
+                <option value="false">Disabled</option>
+                <option value="true">Enabled</option>
+              </select>
+            </label>
+            <label>
+              <div class="label">Notify</div>
+              <select id="notifLead">
+                <option value="60">1 hour before</option>
+                <option value="30">30 mins before</option>
+                <option value="10">10 mins before</option>
+              </select>
+            </label>
+            <label>
+              <div class="label">Target</div>
+              <select id="notifTarget">
+                <option value="event">Before event</option>
+                <option value="commute">Before commute start</option>
+              </select>
+            </label>
+            <div>
+              <div class="label">Browser permission</div>
+              <button id="allowNotifBtn">Allow notifications</button>
+            </div>
+          </div>
+        </div>
 
-  const [loc1, setLoc1] = useState("");
-  const [loc2, setLoc2] = useState("");
-  const [name1, setName1] = useState("");
-  const [name2, setName2] = useState("");
-  const [mot, setMot] = useState("Driving");
-  const [timeText, setTimeText] = useState("");
-  const [lookupBusy, setLookupBusy] = useState(false);
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+          <div class="subtitle">Edit saved presets here. Maximum 25.</div>
+          <button id="addPresetRowBtn">Add preset</button>
+        </div>
 
-  const loc1Ref = useRef(null);
-  const loc2Ref = useRef(null);
-  const notifiedRef = useRef({});
+        <div style="overflow:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Loc 1</th>
+                <th>Name 1</th>
+                <th>Loc 2</th>
+                <th>Name 2</th>
+                <th>MOT</th>
+                <th>Minutes</th>
+                <th>Delete</th>
+              </tr>
+            </thead>
+            <tbody id="presetTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
 
-  const start = useMemo(() => parseTime(startText), [startText]);
-  const end = useMemo(() => parseTime(endText), [endText]);
-  const duration = durationBetween(start, end);
+  <div id="editModalWrap" class="modal-backdrop">
+    <div class="modal small">
+      <div class="modal-header">
+        <h2>Edit obligation</h2>
+        <button data-close="editModalWrap">Close</button>
+      </div>
+      <div class="modal-body stack">
+        <div id="editSummary" class="info-box"></div>
+        <div class="two">
+          <button id="removeObligationBtn" class="btn-primary">Remove linked obligation and commute</button>
+          <button id="editInFormBtn">Edit in form</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
-  useEffect(() => saveLocal(STORAGE_KEYS.obligations, obligations), [obligations]);
-  useEffect(() => saveLocal(STORAGE_KEYS.presets, presets), [presets]);
-  useEffect(() => saveLocal(STORAGE_KEYS.settings, settings), [settings]);
+  <script>
+    const GOOGLE_MAPS_API_KEY = "PASTE_YOUR_GOOGLE_MAPS_API_KEY_HERE";
+    const DAY_MINUTES = 24 * 60;
+    const MAX_PRESETS = 25;
+    const STORAGE_KEYS = {
+      obligations: "planner-obligations-html-v1",
+      presets: "planner-presets-html-v1",
+      settings: "planner-settings-html-v1",
+    };
 
-  useEffect(() => {
-    if (GOOGLE_MAPS_API_KEY.includes("PASTE_YOUR")) return;
-    loadGoogleMaps(
-      GOOGLE_MAPS_API_KEY,
-      () => {
-        setMapsReady(true);
-        setMapsError("");
-      },
-      () => setMapsError("Google Maps failed to load.")
-    );
-  }, []);
+    const state = {
+      obligations: loadLocal(STORAGE_KEYS.obligations, []),
+      presets: loadLocal(STORAGE_KEYS.presets, []),
+      settings: loadLocal(STORAGE_KEYS.settings, {
+        notificationsEnabled: false,
+        notifyLead: "30",
+        notifyTarget: "event",
+      }),
+      selectedId: null,
+      mapsReady: false,
+      autocompleteReady: false,
+      notified: {},
+    };
 
-  useEffect(() => {
-    if (!mapsReady || !window.google?.maps?.places) return;
-    [loc1Ref, loc2Ref].forEach((ref) => {
-      if (!ref.current || ref.current.dataset.ac === "1") return;
-      const ac = new window.google.maps.places.Autocomplete(ref.current, { fields: ["formatted_address", "name"] });
-      ac.addListener("place_changed", () => {
-        const place = ac.getPlace();
-        const value = place?.formatted_address || place?.name || ref.current.value;
-        ref.current.value = value;
-        ref.current.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-      ref.current.dataset.ac = "1";
-    });
-  }, [mapsReady, saveCommuteOpen]);
+    const els = {
+      mapsStatus: document.getElementById("mapsStatus"),
+      titleInput: document.getElementById("titleInput"),
+      placeInput: document.getElementById("placeInput"),
+      startInput: document.getElementById("startInput"),
+      endInput: document.getElementById("endInput"),
+      mainInfo: document.getElementById("mainInfo"),
+      message: document.getElementById("message"),
+      timeline: document.getElementById("timeline"),
+      obligationList: document.getElementById("obligationList"),
 
-  useEffect(() => {
-    if (!settings.notificationsEnabled || typeof Notification === "undefined") return;
-    const interval = setInterval(() => {
-      const now = new Date();
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
-      const lead = Number(settings.notifyLead || 30);
-      obligations.forEach((ob) => {
-        const target = settings.notifyTarget === "commute" && (ob.commuteMode === "pre" || ob.commuteMode === "both")
-          ? ((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES
-          : ob.start;
-        const fireAt = ((target - lead) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES;
-        const key = `${ob.id}-${fireAt}-${now.toDateString()}`;
-        if (Math.abs(nowMinutes - fireAt) <= 0 && !notifiedRef.current[key]) {
-          notifiedRef.current[key] = true;
-          if (Notification.permission === "granted") {
-            new Notification(`Upcoming: ${ob.title}`, {
-              body: settings.notifyTarget === "commute" ? `Leave at ${formatMinutes(target)}.` : `Starts at ${formatMinutes(ob.start)}.`,
-            });
-          }
+      commuteModalWrap: document.getElementById("commuteModalWrap"),
+      modeModalWrap: document.getElementById("modeModalWrap"),
+      settingsModalWrap: document.getElementById("settingsModalWrap"),
+      editModalWrap: document.getElementById("editModalWrap"),
+
+      loc1Input: document.getElementById("loc1Input"),
+      loc2Input: document.getElementById("loc2Input"),
+      name1Input: document.getElementById("name1Input"),
+      name2Input: document.getElementById("name2Input"),
+      motInput: document.getElementById("motInput"),
+      timeInput: document.getElementById("timeInput"),
+
+      presetTableBody: document.getElementById("presetTableBody"),
+      notifEnabled: document.getElementById("notifEnabled"),
+      notifLead: document.getElementById("notifLead"),
+      notifTarget: document.getElementById("notifTarget"),
+      editSummary: document.getElementById("editSummary"),
+    };
+
+    function parseTime(value) {
+      const trimmed = String(value || "").trim().toLowerCase();
+      const match = trimmed.match(/^(\d{1,2})(?::?(\d{2}))?\s*(am|pm)?$/i);
+      if (!match) return null;
+      let hour = Number(match[1]);
+      const minute = Number(match[2] || 0);
+      const suffix = match[3];
+      if (minute > 59) return null;
+      if (suffix) {
+        if (hour < 1 || hour > 12) return null;
+        if (suffix === "am") {
+          if (hour === 12) hour = 0;
+        } else if (hour !== 12) {
+          hour += 12;
+        }
+      } else if (hour > 23) {
+        return null;
+      }
+      return hour * 60 + minute;
+    }
+
+    function formatMinutes(total) {
+      const normalized = ((total % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+      const h24 = Math.floor(normalized / 60);
+      const m = normalized % 60;
+      const suffix = h24 >= 12 ? "PM" : "AM";
+      const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+      return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
+    }
+
+    function toTimeInput(minutes) {
+      const h = Math.floor(minutes / 60) % 24;
+      const m = minutes % 60;
+      return `${String(h).padStart(2, "0")}${String(m).padStart(2, "0")}`;
+    }
+
+    function durationBetween(start, end) {
+      if (start == null || end == null) return null;
+      return end >= start ? end - start : DAY_MINUTES - start + end;
+    }
+
+    function uid() {
+      return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    function loadLocal(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch {
+        return fallback;
+      }
+    }
+
+    function saveLocal(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch {}
+    }
+
+    function normalize(v) {
+      return String(v || "").trim().toLowerCase();
+    }
+
+    function routeKeys(obj) {
+      const a1 = normalize(obj.loc1);
+      const a2 = normalize(obj.loc2);
+      const n1 = normalize(obj.name1);
+      const n2 = normalize(obj.name2);
+      const m = normalize(obj.mot);
+      const keys = [];
+      if (a1 && a2 && m) keys.push(`aa|${a1}|${a2}|${m}`, `aa|${a2}|${a1}|${m}`);
+      if (a1 && n2 && m) keys.push(`an|${a1}|${n2}|${m}`, `na|${n2}|${a1}|${m}`);
+      if (n1 && a2 && m) keys.push(`na|${n1}|${a2}|${m}`, `an|${a2}|${n1}|${m}`);
+      if (n1 && n2 && m) keys.push(`nn|${n1}|${n2}|${m}`, `nn|${n2}|${n1}|${m}`);
+      return [...new Set(keys)];
+    }
+
+    function presetMatches(preset, query) {
+      const a = routeKeys(preset);
+      const b = routeKeys(query);
+      return b.some(key => a.includes(key));
+    }
+
+    function findPreset(query) {
+      return state.presets.find(p => presetMatches(p, query)) || null;
+    }
+
+    function getBlocks() {
+      const blocks = [];
+      state.obligations.forEach(ob => {
+        if (ob.commuteMode === "pre" || ob.commuteMode === "both") {
+          blocks.push({
+            id: `${ob.id}-pre`, ownerId: ob.id, type: "commute",
+            start: ((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES,
+            end: ob.start,
+            title: "Commute",
+            meta: `${ob.loc1 || ob.name1 || "Start"} → ${ob.loc2 || ob.name2 || "End"}`,
+          });
+        }
+        blocks.push({
+          id: ob.id, ownerId: ob.id, type: "obligation",
+          start: ob.start, end: ob.end,
+          title: ob.title,
+          meta: ob.place || "Obligation",
+        });
+        if (ob.commuteMode === "post" || ob.commuteMode === "both") {
+          blocks.push({
+            id: `${ob.id}-post`, ownerId: ob.id, type: "commute",
+            start: ob.end,
+            end: (ob.end + ob.commuteMinutes) % DAY_MINUTES,
+            title: "Commute",
+            meta: `${ob.loc1 || ob.name1 || "Start"} → ${ob.loc2 || ob.name2 || "End"}`,
+          });
         }
       });
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [obligations, settings]);
+      return blocks;
+    }
 
-  function requestNotificationPermission() {
-    if (typeof Notification === "undefined") {
-      setMessage("Notifications are not supported in this viewer. They should work better on a hosted site like GitHub Pages if the browser allows them.");
-      return;
+    function blockRanges(block) {
+      if (block.end >= block.start) return [{ ...block, actualStart: block.start, actualEnd: block.end }];
+      return [
+        { ...block, actualStart: block.start, actualEnd: DAY_MINUTES },
+        { ...block, actualStart: 0, actualEnd: block.end },
+      ];
     }
-    Notification.requestPermission().then((permission) => {
-      setMessage(permission === "granted" ? "Notifications enabled." : "Notifications were not allowed.");
-    });
-  }
 
-  function resetCommuteFields() {
-    setLoc1("");
-    setLoc2("");
-    setName1("");
-    setName2("");
-    setMot("Driving");
-    setTimeText("");
-  }
+    function overlaps(a, b) {
+      return a.actualStart < b.actualEnd && b.actualStart < a.actualEnd;
+    }
 
-  function baseObligationValid() {
-    if (!title.trim()) return "Set what you are doing.";
-    if (start == null || end == null) return "Set valid start and end times.";
-    if (!duration || duration <= 0) return "Start and end must create a real block.";
-    return "";
-  }
+    function setMessage(text) {
+      els.message.textContent = text || "";
+    }
 
-  function checkOverlap(candidate) {
-    const pieces = getBlockRows([candidate]).flatMap(rangesForBlock);
-    for (const ob of obligations) {
-      if (ob.id === candidate.id) continue;
-      const other = getBlockRows([ob]).flatMap(rangesForBlock);
-      for (const a of pieces) for (const b of other) if (overlaps(a, b)) return `${ob.title} (${formatMinutes(b.actualStart)}–${formatMinutes(b.actualEnd)})`;
-    }
-    return "";
-  }
+    function openModal(el) { el.classList.add("open"); }
+    function closeModal(el) { el.classList.remove("open"); }
 
-  function saveObligation(commuteMode = null) {
-    const err = baseObligationValid();
-    if (err) {
-      setMessage(err);
-      return;
-    }
-    const commuteMinutes = Number(timeText);
-    if (commuteMode && (!Number.isFinite(commuteMinutes) || commuteMinutes <= 0)) {
-      setMessage("To save with commute, time must be set.");
-      return;
-    }
-    const ob = {
-      id: uid(),
-      title: title.trim(),
-      place: place.trim(),
-      start,
-      end,
-      commuteMode,
-      commuteMinutes: commuteMode ? commuteMinutes : 0,
-      loc1: loc1.trim(),
-      loc2: loc2.trim(),
-      name1: name1.trim(),
-      name2: name2.trim(),
-      mot: mot.trim(),
-    };
-    const overlap = checkOverlap(ob);
-    if (overlap) {
-      setMessage(`Overlap detected with ${overlap}.`);
-      return;
-    }
-    setObligations((curr) => [...curr, ob]);
-    setMessage("Saved to bar graph.");
-    setSaveModeOpen(false);
-    setSaveCommuteOpen(false);
-    resetCommuteFields();
-  }
-
-  function tryOpenSaveWithCommute() {
-    const err = baseObligationValid();
-    if (err) {
-      setMessage(err);
-      return;
-    }
-    setSaveCommuteOpen(true);
-  }
-
-  function savePreset() {
-    const minutes = Number(timeText);
-    if (!Number.isFinite(minutes) || minutes <= 0) {
-      setMessage("Preset requires time.");
-      return;
-    }
-    const hasLocations = normalize(loc1) && normalize(loc2);
-    const hasNames = normalize(name1) && normalize(name2);
-    if (!hasLocations && !hasNames) {
-      setMessage("Preset requires both locations or both nicknames.");
-      return;
-    }
-    const draft = { id: uid(), loc1: loc1.trim(), loc2: loc2.trim(), name1: name1.trim(), name2: name2.trim(), mot: mot.trim() || "Driving", timeMinutes: minutes };
-    const existing = findPreset(presets, draft);
-    if (existing) {
-      const replace = window.confirm("A matching preset already exists. Replace it?");
-      if (!replace) return;
-      setPresets((curr) => curr.map((p) => (p.id === existing.id ? { ...existing, ...draft, id: existing.id } : p)));
-      setMessage("Preset updated.");
-      return;
-    }
-    if (presets.length >= MAX_PRESETS) {
-      setMessage(`You can store up to ${MAX_PRESETS} presets.`);
-      return;
-    }
-    setPresets((curr) => [...curr, draft]);
-    setMessage("Preset saved locally.");
-  }
-
-  async function apiSearch() {
-    if (!normalize(loc1) || !normalize(loc2)) {
-      setMessage("API search requires both locations.");
-      return;
-    }
-    const existing = findPreset(presets, { loc1, loc2, name1, name2, mot });
-    if (existing) {
-      setTimeText(String(existing.timeMinutes));
-      setMessage("Loaded time from saved preset.");
-      return;
-    }
-    if (!mapsReady || !window.google?.maps) {
-      setMessage("Google Maps is not ready. Add your API key at the top of this file. The canvas preview may also be stricter than GitHub Pages.");
-      return;
-    }
-    setLookupBusy(true);
-    try {
-      const service = new window.google.maps.DirectionsService();
-      const modeMap = {
-        Driving: window.google.maps.TravelMode.DRIVING,
-        Walking: window.google.maps.TravelMode.WALKING,
-        Bicycling: window.google.maps.TravelMode.BICYCLING,
-        Transit: window.google.maps.TravelMode.TRANSIT,
+    function getMainDraft() {
+      return {
+        title: els.titleInput.value.trim(),
+        place: els.placeInput.value.trim(),
+        start: parseTime(els.startInput.value),
+        end: parseTime(els.endInput.value),
       };
-      const result = await service.route({ origin: loc1, destination: loc2, travelMode: modeMap[mot] || window.google.maps.TravelMode.DRIVING });
-      const leg = result.routes?.[0]?.legs?.[0];
-      const minutes = Math.max(1, Math.round((leg?.duration?.value || 0) / 60));
-      if (!minutes) throw new Error("No duration returned.");
-      setTimeText(String(minutes));
-      setMessage("API calculated time and filled the time box.");
-    } catch (e) {
-      setMessage(e?.message || "API search failed.");
-    } finally {
-      setLookupBusy(false);
     }
-  }
 
-  function updatePreset(id, patch) {
-    setPresets((curr) => curr.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-  }
+    function validateMainDraft() {
+      const draft = getMainDraft();
+      if (!draft.title) return "Set what you are doing.";
+      if (draft.start == null || draft.end == null) return "Set valid start and end times.";
+      if (!durationBetween(draft.start, draft.end)) return "Start and end must create a real block.";
+      return "";
+    }
 
-  function deletePreset(id) {
-    setPresets((curr) => curr.filter((p) => p.id !== id));
-  }
+    function getCommuteDraft() {
+      return {
+        loc1: els.loc1Input.value.trim(),
+        loc2: els.loc2Input.value.trim(),
+        name1: els.name1Input.value.trim(),
+        name2: els.name2Input.value.trim(),
+        mot: els.motInput.value.trim(),
+        timeMinutes: Number(els.timeInput.value),
+      };
+    }
 
-  const selected = obligations.find((o) => o.id === selectedId) || null;
+    function saveObligation(commuteMode) {
+      const err = validateMainDraft();
+      if (err) return setMessage(err);
+      const main = getMainDraft();
+      const commute = getCommuteDraft();
+      if (commuteMode && (!Number.isFinite(commute.timeMinutes) || commute.timeMinutes <= 0)) {
+        return setMessage("To save with commute, time must be set.");
+      }
+      const ob = {
+        id: uid(),
+        title: main.title,
+        place: main.place,
+        start: main.start,
+        end: main.end,
+        commuteMode: commuteMode || null,
+        commuteMinutes: commuteMode ? commute.timeMinutes : 0,
+        loc1: commute.loc1,
+        loc2: commute.loc2,
+        name1: commute.name1,
+        name2: commute.name2,
+        mot: commute.mot,
+      };
 
-  return (
-    <div className="min-h-screen bg-zinc-950 p-6 text-zinc-100 md:p-10">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-900/90 p-6 shadow-2xl">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.28em] text-zinc-500">Daily planner</p>
-              <h1 className="mt-2 text-3xl font-bold">Obligations and commute bar</h1>
-              <p className="mt-2 text-zinc-400">The canvas preview may not fully support Google Maps or browser notifications. GitHub Pages is a better target for live testing.</p>
-            </div>
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4 text-sm">
-              <div className="font-semibold">API key location</div>
-              <code className="mt-2 block rounded-xl bg-zinc-900 px-3 py-2 text-xs text-red-300">const GOOGLE_MAPS_API_KEY = "PASTE_YOUR_GOOGLE_MAPS_API_KEY_HERE";</code>
-              {mapsReady ? <div className="mt-2 text-emerald-300">Google Maps loaded.</div> : <div className="mt-2 text-amber-300">{mapsError || "Google Maps inactive until you replace the placeholder key."}</div>}
-            </div>
-          </div>
-        </div>
+      const candidateBlocks = [];
+      if (ob.commuteMode === "pre" || ob.commuteMode === "both") {
+        candidateBlocks.push({ start: ((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES, end: ob.start });
+      }
+      candidateBlocks.push({ start: ob.start, end: ob.end });
+      if (ob.commuteMode === "post" || ob.commuteMode === "both") {
+        candidateBlocks.push({ start: ob.end, end: (ob.end + ob.commuteMinutes) % DAY_MINUTES });
+      }
 
-        <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
-          <div className="space-y-6 rounded-3xl border border-zinc-800 bg-zinc-900/90 p-6 shadow-2xl">
-            <LabeledInput label="What are you doing?" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Work, class, lab..." />
-            <LabeledInput label="Where is it?" value={place} onChange={(e) => setPlace(e.target.value)} placeholder="Optional place label" />
-            <div className="grid grid-cols-2 gap-3">
-              <LabeledInput label="Start time" value={startText} onChange={(e) => setStartText(e.target.value)} placeholder="0900 or 9:00 AM" />
-              <LabeledInput label="End time" value={endText} onChange={(e) => setEndText(e.target.value)} placeholder="1700 or 5:00 PM" />
-            </div>
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-300">
-              {start != null && end != null && duration ? (
-                <div className="space-y-1">
-                  <div><span className="text-zinc-500">Block:</span> {formatMinutes(start)}–{formatMinutes(end)}</div>
-                  <div><span className="text-zinc-500">Duration:</span> {duration} minutes</div>
-                  <div><span className="text-zinc-500">Share of day:</span> {((duration / DAY_MINUTES) * 100).toFixed(1)}%</div>
-                </div>
-              ) : <div className="text-amber-300">Enter valid times.</div>}
-            </div>
-            {message && <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-200">{message}</div>}
-            <div className="grid grid-cols-3 gap-3">
-              <button onClick={() => saveObligation(null)} className="rounded-2xl bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500">Save</button>
-              <button onClick={tryOpenSaveWithCommute} className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 font-semibold text-zinc-300 hover:border-zinc-500">Save with commute</button>
-              <button onClick={() => setSettingsOpen(true)} className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 font-semibold text-zinc-300 hover:border-zinc-500">Settings</button>
-            </div>
-          </div>
+      for (const existing of state.obligations) {
+        const existingBlocks = [];
+        if (existing.commuteMode === "pre" || existing.commuteMode === "both") {
+          existingBlocks.push({ start: ((existing.start - existing.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES, end: existing.start });
+        }
+        existingBlocks.push({ start: existing.start, end: existing.end });
+        if (existing.commuteMode === "post" || existing.commuteMode === "both") {
+          existingBlocks.push({ start: existing.end, end: (existing.end + existing.commuteMinutes) % DAY_MINUTES });
+        }
 
-          <div className="space-y-6">
-            <div className="rounded-3xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-950 p-6 shadow-2xl">
-              <div className="mb-5 flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.28em] text-zinc-500">Output</p>
-                  <h2 className="mt-2 text-2xl font-semibold">Bar graph</h2>
-                </div>
-                <div className="text-sm text-zinc-400">Little rectangles with grey gaps, red obligations, orange commutes.</div>
-              </div>
-              <Timeline obligations={obligations} onSelect={setSelectedId} />
-            </div>
+        for (const a of candidateBlocks) {
+          for (const b of existingBlocks) {
+            const ar = a.end >= a.start ? [{ actualStart: a.start, actualEnd: a.end }] : [{ actualStart: a.start, actualEnd: DAY_MINUTES }, { actualStart: 0, actualEnd: a.end }];
+            const br = b.end >= b.start ? [{ actualStart: b.start, actualEnd: b.end }] : [{ actualStart: b.start, actualEnd: DAY_MINUTES }, { actualStart: 0, actualEnd: b.end }];
+            if (ar.some(x => br.some(y => overlaps(x, y)))) {
+              return setMessage(`Overlap detected with ${existing.title}.`);
+            }
+          }
+        }
+      }
 
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-900/90 p-6 shadow-2xl">
-              <h3 className="mb-4 text-xl font-semibold">Saved obligations</h3>
-              {obligations.length === 0 ? <div className="text-zinc-500">Nothing saved yet.</div> : (
-                <div className="space-y-3">
-                  {obligations.map((o) => (
-                    <button key={o.id} onClick={() => setSelectedId(o.id)} className="block w-full rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 text-left hover:border-zinc-600">
-                      <div className="font-semibold text-white">{o.title}</div>
-                      <div className="mt-1 text-sm text-zinc-400">{formatMinutes(o.start)}–{formatMinutes(o.end)}{o.commuteMode ? ` · ${o.commuteMode} commute · ${o.commuteMinutes} min` : ""}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      state.obligations.push(ob);
+      saveLocal(STORAGE_KEYS.obligations, state.obligations);
+      setMessage("Saved to bar graph.");
+      renderAll();
+      closeModal(els.modeModalWrap);
+      closeModal(els.commuteModalWrap);
+    }
 
-      <Modal open={saveCommuteOpen} title="Save with commute" onClose={() => setSaveCommuteOpen(false)}>
-        <div className="grid gap-4 md:grid-cols-2">
-          <LabeledInput inputRef={loc1Ref} label="Loc 1" value={loc1} onChange={(e) => setLoc1(e.target.value)} placeholder="Start address" />
-          <LabeledInput inputRef={loc2Ref} label="Loc 2" value={loc2} onChange={(e) => setLoc2(e.target.value)} placeholder="End address" />
-          <LabeledInput label="Name 1" value={name1} onChange={(e) => setName1(e.target.value)} placeholder="Optional nickname" />
-          <LabeledInput label="Name 2" value={name2} onChange={(e) => setName2(e.target.value)} placeholder="Optional nickname" />
-          <label className="block">
-            <div className="mb-1 text-sm text-zinc-400">MOT</div>
-            <select value={mot} onChange={(e) => setMot(e.target.value)} className="w-full rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-red-500">
-              <option>Driving</option><option>Walking</option><option>Bicycling</option><option>Transit</option>
+    function savePreset() {
+      const draft = getCommuteDraft();
+      if (!Number.isFinite(draft.timeMinutes) || draft.timeMinutes <= 0) return setMessage("Preset requires time.");
+      const hasLocations = normalize(draft.loc1) && normalize(draft.loc2);
+      const hasNames = normalize(draft.name1) && normalize(draft.name2);
+      if (!hasLocations && !hasNames) return setMessage("Preset requires both locations or both nicknames.");
+      const existing = findPreset(draft);
+      if (existing) {
+        if (!window.confirm("A matching preset already exists. Replace it?")) return;
+        Object.assign(existing, draft);
+        saveLocal(STORAGE_KEYS.presets, state.presets);
+        renderPresets();
+        return setMessage("Preset updated.");
+      }
+      if (state.presets.length >= MAX_PRESETS) return setMessage(`You can store up to ${MAX_PRESETS} presets.`);
+      state.presets.push({ id: uid(), ...draft });
+      saveLocal(STORAGE_KEYS.presets, state.presets);
+      renderPresets();
+      setMessage("Preset saved locally.");
+    }
+
+    async function apiSearch() {
+      const draft = getCommuteDraft();
+      if (!normalize(draft.loc1) || !normalize(draft.loc2)) return setMessage("API search requires both locations.");
+      const existing = findPreset(draft);
+      if (existing) {
+        els.timeInput.value = String(existing.timeMinutes);
+        return setMessage("Loaded time from saved preset.");
+      }
+      if (!state.mapsReady || !window.google?.maps) {
+        return setMessage("Google Maps is not ready. Add your API key and host on GitHub Pages.");
+      }
+      document.getElementById("apiBtn").disabled = true;
+      document.getElementById("apiBtn").textContent = "Searching...";
+      try {
+        const service = new window.google.maps.DirectionsService();
+        const modeMap = {
+          Driving: window.google.maps.TravelMode.DRIVING,
+          Walking: window.google.maps.TravelMode.WALKING,
+          Bicycling: window.google.maps.TravelMode.BICYCLING,
+          Transit: window.google.maps.TravelMode.TRANSIT,
+        };
+        const result = await service.route({
+          origin: draft.loc1,
+          destination: draft.loc2,
+          travelMode: modeMap[draft.mot] || window.google.maps.TravelMode.DRIVING,
+        });
+        const minutes = Math.max(1, Math.round((result.routes?.[0]?.legs?.[0]?.duration?.value || 0) / 60));
+        if (!minutes) throw new Error("No duration returned.");
+        els.timeInput.value = String(minutes);
+        setMessage("API calculated time and filled the time box.");
+      } catch (err) {
+        setMessage(err?.message || "API search failed.");
+      } finally {
+        document.getElementById("apiBtn").disabled = false;
+        document.getElementById("apiBtn").textContent = "API";
+      }
+    }
+
+    function renderMainInfo() {
+      const draft = getMainDraft();
+      const duration = durationBetween(draft.start, draft.end);
+      if (draft.start == null || draft.end == null || !duration) {
+        els.mainInfo.textContent = "Enter valid times.";
+        return;
+      }
+      els.mainInfo.innerHTML = `
+        <div><span class="muted">Block:</span> ${formatMinutes(draft.start)}–${formatMinutes(draft.end)}</div>
+        <div><span class="muted">Duration:</span> ${duration} minutes</div>
+        <div><span class="muted">Share of day:</span> ${((duration / DAY_MINUTES) * 100).toFixed(1)}%</div>
+      `;
+    }
+
+    function renderTimeline() {
+      const blocks = getBlocks();
+      els.timeline.innerHTML = "";
+      for (let i = 0; i < 96; i++) {
+        const slotStart = i * 15;
+        const slotEnd = slotStart + 15;
+        const covering = blocks.find(block => blockRanges(block).some(r => r.actualStart < slotEnd && slotStart < r.actualEnd));
+        const btn = document.createElement("button");
+        btn.className = `slot ${covering ? (covering.type === "commute" ? "commute" : "obligation") : "empty"}`;
+        btn.title = covering ? `${covering.title} · ${covering.meta}` : `${formatMinutes(slotStart)}–${formatMinutes(slotEnd % DAY_MINUTES)}`;
+        if (covering) btn.addEventListener("click", () => openEdit(covering.ownerId));
+        els.timeline.appendChild(btn);
+      }
+    }
+
+    function renderObligations() {
+      els.obligationList.innerHTML = "";
+      if (!state.obligations.length) {
+        els.obligationList.innerHTML = `<div class="muted">Nothing saved yet.</div>`;
+        return;
+      }
+      state.obligations.forEach(ob => {
+        const card = document.createElement("div");
+        card.className = "list-card";
+        card.innerHTML = `
+          <div><strong>${escapeHtml(ob.title)}</strong></div>
+          <div class="muted">${formatMinutes(ob.start)}–${formatMinutes(ob.end)}${ob.commuteMode ? ` · ${ob.commuteMode} commute · ${ob.commuteMinutes} min` : ""}</div>
+          <button>Edit</button>
+        `;
+        card.querySelector("button").addEventListener("click", () => openEdit(ob.id));
+        els.obligationList.appendChild(card);
+      });
+    }
+
+    function renderPresets() {
+      els.presetTableBody.innerHTML = "";
+      state.presets.forEach(p => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><input value="${escapeAttr(p.loc1 || "")}" /></td>
+          <td><input value="${escapeAttr(p.name1 || "")}" /></td>
+          <td><input value="${escapeAttr(p.loc2 || "")}" /></td>
+          <td><input value="${escapeAttr(p.name2 || "")}" /></td>
+          <td>
+            <select>
+              <option ${p.mot === "Driving" ? "selected" : ""}>Driving</option>
+              <option ${p.mot === "Walking" ? "selected" : ""}>Walking</option>
+              <option ${p.mot === "Bicycling" ? "selected" : ""}>Bicycling</option>
+              <option ${p.mot === "Transit" ? "selected" : ""}>Transit</option>
             </select>
-          </label>
-          <LabeledInput label="Time (minutes)" value={timeText} onChange={(e) => setTimeText(e.target.value)} placeholder="Filled by API or manual" />
-        </div>
-        <div className="mt-6 grid grid-cols-3 gap-3">
-          <button onClick={() => setSaveModeOpen(true)} className="rounded-2xl bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500">Save</button>
-          <button onClick={savePreset} className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 font-semibold text-zinc-300 hover:border-zinc-500">Preset</button>
-          <button onClick={apiSearch} disabled={lookupBusy} className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 font-semibold text-zinc-300 hover:border-zinc-500 disabled:opacity-50">{lookupBusy ? "Searching..." : "API"}</button>
-        </div>
-        <div className="mt-4 text-sm text-zinc-500">Autocomplete should help with addresses once the API key is active on a hosted site.</div>
-      </Modal>
+          </td>
+          <td><input value="${escapeAttr(String(p.timeMinutes || 0))}" /></td>
+          <td><button>Delete</button></td>
+        `;
+        const inputs = tr.querySelectorAll("input, select");
+        inputs[0].addEventListener("input", e => p.loc1 = e.target.value);
+        inputs[1].addEventListener("input", e => p.name1 = e.target.value);
+        inputs[2].addEventListener("input", e => p.loc2 = e.target.value);
+        inputs[3].addEventListener("input", e => p.name2 = e.target.value);
+        inputs[4].addEventListener("change", e => p.mot = e.target.value);
+        inputs[5].addEventListener("input", e => p.timeMinutes = Number(e.target.value) || 0);
+        tr.querySelector("button").addEventListener("click", () => {
+          state.presets = state.presets.filter(x => x.id !== p.id);
+          saveLocal(STORAGE_KEYS.presets, state.presets);
+          renderPresets();
+        });
+        els.presetTableBody.appendChild(tr);
+      });
+      saveLocal(STORAGE_KEYS.presets, state.presets);
+    }
 
-      <Modal open={saveModeOpen} title="Where should the commute go?" onClose={() => setSaveModeOpen(false)}>
-        <div className="grid gap-3 md:grid-cols-4">
-          <button onClick={() => saveObligation("pre")} className="rounded-2xl bg-sky-600 px-4 py-4 font-semibold text-white">Pre commute</button>
-          <button onClick={() => saveObligation("post")} className="rounded-2xl bg-emerald-600 px-4 py-4 font-semibold text-white">Post commute</button>
-          <button onClick={() => saveObligation("both")} className="rounded-2xl bg-violet-600 px-4 py-4 font-semibold text-white">Both</button>
-          <button onClick={() => setSaveModeOpen(false)} className="rounded-2xl border border-zinc-700 px-4 py-4 font-semibold text-zinc-300">Nevermind</button>
-        </div>
-      </Modal>
+    function openEdit(id) {
+      state.selectedId = id;
+      const ob = state.obligations.find(x => x.id === id);
+      if (!ob) return;
+      els.editSummary.innerHTML = `
+        <div><strong>${escapeHtml(ob.title)}</strong></div>
+        <div style="margin-top:6px;">${formatMinutes(ob.start)}–${formatMinutes(ob.end)}</div>
+        ${ob.commuteMode ? `<div style="margin-top:6px;">${escapeHtml(ob.commuteMode)} commute · ${ob.commuteMinutes} min · ${escapeHtml(ob.mot)}</div>` : ""}
+      `;
+      openModal(els.editModalWrap);
+    }
 
-      <Modal open={settingsOpen} title="Settings" onClose={() => setSettingsOpen(false)} wide>
-        <div className="mb-8 grid gap-4 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 md:grid-cols-4">
-          <label className="flex items-center gap-2 text-sm text-zinc-200">
-            <input type="checkbox" checked={settings.notificationsEnabled} onChange={(e) => setSettings((s) => ({ ...s, notificationsEnabled: e.target.checked }))} />
-            Enable notifications
-          </label>
-          <label className="block text-sm text-zinc-300">
-            <div className="mb-1 text-zinc-400">Notify</div>
-            <select value={settings.notifyLead} onChange={(e) => setSettings((s) => ({ ...s, notifyLead: e.target.value }))} className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2">
-              <option value="60">1 hour before</option>
-              <option value="30">30 mins before</option>
-              <option value="10">10 mins before</option>
-            </select>
-          </label>
-          <label className="block text-sm text-zinc-300">
-            <div className="mb-1 text-zinc-400">Target</div>
-            <select value={settings.notifyTarget} onChange={(e) => setSettings((s) => ({ ...s, notifyTarget: e.target.value }))} className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2">
-              <option value="event">Before event</option>
-              <option value="commute">Before commute start</option>
-            </select>
-          </label>
-          <button onClick={requestNotificationPermission} className="rounded-xl border border-zinc-700 px-3 py-2 text-zinc-300 hover:border-zinc-500">Allow browser notifications</button>
-        </div>
-        <div className="mb-4 flex items-center justify-between gap-4 text-sm text-zinc-400">
-          <div>Edit saved presets here. Maximum {MAX_PRESETS}.</div>
-          <button
-            disabled={presets.length >= MAX_PRESETS}
-            onClick={() => setPresets((curr) => [...curr, { id: uid(), loc1: "", loc2: "", name1: "", name2: "", mot: "Driving", timeMinutes: 0 }])}
-            className="rounded-xl border border-zinc-700 px-3 py-2 text-zinc-300 disabled:opacity-50"
-          >
-            Add preset
-          </button>
-        </div>
-        <PresetTable presets={presets} onUpdate={updatePreset} onDelete={deletePreset} />
-      </Modal>
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+    }
+    function escapeAttr(s) { return escapeHtml(s); }
 
-      <Modal open={!!selected} title="Edit obligation" onClose={() => setSelectedId(null)}>
-        {selected && (
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-300">
-              <div className="font-semibold text-white">{selected.title}</div>
-              <div className="mt-1">{formatMinutes(selected.start)}–{formatMinutes(selected.end)}</div>
-              {selected.commuteMode && <div className="mt-1">{selected.commuteMode} commute · {selected.commuteMinutes} min · {selected.mot}</div>}
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setObligations((curr) => curr.filter((o) => o.id !== selected.id));
-                  setSelectedId(null);
-                }}
-                className="rounded-2xl bg-red-700 px-4 py-3 font-semibold text-white"
-              >
-                Remove linked obligation and commute
-              </button>
-              <button
-                onClick={() => {
-                  setTitle(selected.title);
-                  setPlace(selected.place || "");
-                  setStartText(toTimeInput(selected.start));
-                  setEndText(toTimeInput(selected.end));
-                  setLoc1(selected.loc1 || "");
-                  setLoc2(selected.loc2 || "");
-                  setName1(selected.name1 || "");
-                  setName2(selected.name2 || "");
-                  setMot(selected.mot || "Driving");
-                  setTimeText(selected.commuteMinutes ? String(selected.commuteMinutes) : "");
-                  setObligations((curr) => curr.filter((o) => o.id !== selected.id));
-                  setSelectedId(null);
-                }}
-                className="rounded-2xl border border-zinc-700 px-4 py-3 font-semibold text-zinc-300"
-              >
-                Edit in form
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-    </div>
-  );
-}
+    function renderSettings() {
+      els.notifEnabled.value = String(state.settings.notificationsEnabled);
+      els.notifLead.value = state.settings.notifyLead;
+      els.notifTarget.value = state.settings.notifyTarget;
+    }
+
+    function renderAll() {
+      renderMainInfo();
+      renderTimeline();
+      renderObligations();
+      renderPresets();
+      renderSettings();
+    }
+
+    function attachAutocomplete() {
+      if (!state.mapsReady || !window.google?.maps?.places || state.autocompleteReady) return;
+      [els.loc1Input, els.loc2Input].forEach(input => {
+        const ac = new window.google.maps.places.Autocomplete(input, { fields: ["formatted_address", "name"] });
+        ac.addListener("place_changed", () => {
+          const place = ac.getPlace();
+          input.value = place?.formatted_address || place?.name || input.value;
+        });
+      });
+      state.autocompleteReady = true;
+    }
+
+    function bootGoogleMaps() {
+      if (GOOGLE_MAPS_API_KEY.includes("PASTE_YOUR")) return;
+      if (window.google?.maps?.places) {
+        state.mapsReady = true;
+        els.mapsStatus.textContent = "Google Maps loaded.";
+        attachAutocomplete();
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        state.mapsReady = true;
+        els.mapsStatus.textContent = "Google Maps loaded.";
+        attachAutocomplete();
+      };
+      script.onerror = () => {
+        els.mapsStatus.textContent = "Google Maps failed to load.";
+      };
+      document.head.appendChild(script);
+    }
+
+    function requestNotificationPermission() {
+      if (typeof Notification === "undefined") {
+        return setMessage("Notifications are not supported here.");
+      }
+      Notification.requestPermission().then(permission => {
+        setMessage(permission === "granted" ? "Notifications enabled." : "Notifications were not allowed.");
+      });
+    }
+
+    function runNotificationLoop() {
+      setInterval(() => {
+        if (!state.settings.notificationsEnabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+        const now = new Date();
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        const lead = Number(state.settings.notifyLead || 30);
+        state.obligations.forEach(ob => {
+          const target = state.settings.notifyTarget === "commute" && (ob.commuteMode === "pre" || ob.commuteMode === "both")
+            ? ((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES
+            : ob.start;
+          const fireAt = ((target - lead) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES;
+          const key = `${ob.id}-${fireAt}-${now.toDateString()}`;
+          if (nowMinutes === fireAt && !state.notified[key]) {
+            state.notified[key] = true;
+            new Notification(`Upcoming: ${ob.title}`, {
+              body: state.settings.notifyTarget === "commute" ? `Leave at ${formatMinutes(target)}.` : `Starts at ${formatMinutes(ob.start)}.`,
+            });
+          }
+        });
+      }, 30000);
+    }
+
+    document.getElementById("saveBtn").addEventListener("click", () => saveObligation(null));
+    document.getElementById("saveCommuteBtn").addEventListener("click", () => {
+      const err = validateMainDraft();
+      if (err) return setMessage(err);
+      openModal(els.commuteModalWrap);
+    });
+    document.getElementById("settingsBtn").addEventListener("click", () => openModal(els.settingsModalWrap));
+    document.getElementById("commuteSaveBtn").addEventListener("click", () => openModal(els.modeModalWrap));
+    document.getElementById("presetBtn").addEventListener("click", savePreset);
+    document.getElementById("apiBtn").addEventListener("click", apiSearch);
+    document.getElementById("preBtn").addEventListener("click", () => saveObligation("pre"));
+    document.getElementById("postBtn").addEventListener("click", () => saveObligation("post"));
+    document.getElementById("bothBtn").addEventListener("click", () => saveObligation("both"));
+    document.getElementById("addPresetRowBtn").addEventListener("click", () => {
+      if (state.presets.length >= MAX_PRESETS) return setMessage(`You can store up to ${MAX_PRESETS} presets.`);
+      state.presets.push({ id: uid(), loc1: "", name1: "", loc2: "", name2: "", mot: "Driving", timeMinutes: 0 });
+      renderPresets();
+    });
+    document.getElementById("allowNotifBtn").addEventListener("click", requestNotificationPermission);
+    document.getElementById("removeObligationBtn").addEventListener("click", () => {
+      state.obligations = state.obligations.filter(o => o.id !== state.selectedId);
+      saveLocal(STORAGE_KEYS.obligations, state.obligations);
+      closeModal(els.editModalWrap);
+      renderAll();
+    });
+    document.getElementById("editInFormBtn").addEventListener("click", () => {
+      const ob = state.obligations.find(o => o.id === state.selectedId);
+      if (!ob) return;
+      els.titleInput.value = ob.title;
+      els.placeInput.value = ob.place || "";
+      els.startInput.value = toTimeInput(ob.start);
+      els.endInput.value = toTimeInput(ob.end);
+      els.loc1Input.value = ob.loc1 || "";
+      els.loc2Input.value = ob.loc2 || "";
+      els.name1Input.value = ob.name1 || "";
+      els.name2Input.value = ob.name2 || "";
+      els.motInput.value = ob.mot || "Driving";
+      els.timeInput.value = ob.commuteMinutes ? String(ob.commuteMinutes) : "";
+      state.obligations = state.obligations.filter(o => o.id !== ob.id);
+      saveLocal(STORAGE_KEYS.obligations, state.obligations);
+      closeModal(els.editModalWrap);
+      renderAll();
+    });
+
+    [els.titleInput, els.placeInput, els.startInput, els.endInput].forEach(el => el.addEventListener("input", renderMainInfo));
+    document.querySelectorAll("[data-close]").forEach(btn => {
+      btn.addEventListener("click", () => closeModal(document.getElementById(btn.dataset.close)));
+    });
+
+    els.notifEnabled.addEventListener("change", e => {
+      state.settings.notificationsEnabled = e.target.value === "true";
+      saveLocal(STORAGE_KEYS.settings, state.settings);
+    });
+    els.notifLead.addEventListener("change", e => {
+      state.settings.notifyLead = e.target.value;
+      saveLocal(STORAGE_KEYS.settings, state.settings);
+    });
+    els.notifTarget.addEventListener("change", e => {
+      state.settings.notifyTarget = e.target.value;
+      saveLocal(STORAGE_KEYS.settings, state.settings);
+    });
+
+    bootGoogleMaps();
+    runNotificationLoop();
+    renderAll();
+  </script>
+</body>
+</html>

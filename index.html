@@ -1,0 +1,689 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+const GOOGLE_MAPS_API_KEY = "PASTE_YOUR_GOOGLE_MAPS_API_KEY_HERE";
+const DAY_MINUTES = 24 * 60;
+const MAX_PRESETS = 25;
+const STORAGE_KEYS = {
+  obligations: "planner-obligations-v2",
+  presets: "planner-presets-v2",
+  settings: "planner-settings-v1",
+};
+
+function parseTime(value) {
+  const trimmed = String(value || "").trim().toLowerCase();
+  const match = trimmed.match(/^(\d{1,2})(?::?(\d{2}))?\s*(am|pm)?$/i);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  const suffix = match[3];
+  if (minute > 59) return null;
+  if (suffix) {
+    if (hour < 1 || hour > 12) return null;
+    if (suffix === "am") {
+      if (hour === 12) hour = 0;
+    } else if (hour !== 12) {
+      hour += 12;
+    }
+  } else if (hour > 23) {
+    return null;
+  }
+  return hour * 60 + minute;
+}
+
+function toTimeInput(minutes) {
+  const h = Math.floor(minutes / 60) % 24;
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}${String(m).padStart(2, "0")}`;
+}
+
+function formatMinutes(total) {
+  const normalized = ((total % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+  const h24 = Math.floor(normalized / 60);
+  const m = normalized % 60;
+  const suffix = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
+function durationBetween(start, end) {
+  if (start == null || end == null) return null;
+  return end >= start ? end - start : DAY_MINUTES - start + end;
+}
+
+function uid() {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+function loadLocal(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveLocal(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+function loadGoogleMaps(apiKey, onReady, onError) {
+  if (typeof window === "undefined") return;
+  if (window.google?.maps?.places) {
+    onReady();
+    return;
+  }
+  const existing = document.querySelector('script[data-google-maps-loader="true"]');
+  if (existing) {
+    existing.addEventListener("load", onReady, { once: true });
+    existing.addEventListener("error", onError, { once: true });
+    return;
+  }
+  const script = document.createElement("script");
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+  script.async = true;
+  script.defer = true;
+  script.dataset.googleMapsLoader = "true";
+  script.addEventListener("load", onReady, { once: true });
+  script.addEventListener("error", onError, { once: true });
+  document.head.appendChild(script);
+}
+
+function normalize(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function routeKeys({ loc1, loc2, name1, name2, mot }) {
+  const a1 = normalize(loc1);
+  const a2 = normalize(loc2);
+  const n1 = normalize(name1);
+  const n2 = normalize(name2);
+  const m = normalize(mot);
+  const keys = [];
+  if (a1 && a2 && m) keys.push(`aa|${a1}|${a2}|${m}`, `aa|${a2}|${a1}|${m}`);
+  if (a1 && n2 && m) keys.push(`an|${a1}|${n2}|${m}`, `na|${n2}|${a1}|${m}`);
+  if (n1 && a2 && m) keys.push(`na|${n1}|${a2}|${m}`, `an|${a2}|${n1}|${m}`);
+  if (n1 && n2 && m) keys.push(`nn|${n1}|${n2}|${m}`, `nn|${n2}|${n1}|${m}`);
+  return [...new Set(keys)];
+}
+
+function presetMatches(preset, query) {
+  const qKeys = routeKeys(query);
+  const pKeys = routeKeys(preset);
+  return qKeys.some((k) => pKeys.includes(k));
+}
+
+function findPreset(presets, query) {
+  return presets.find((p) => presetMatches(p, query)) || null;
+}
+
+function getBlockRows(obligations) {
+  const blocks = [];
+  for (const ob of obligations) {
+    if (ob.commuteMode === "pre" || ob.commuteMode === "both") {
+      const start = ((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES;
+      blocks.push({
+        id: `${ob.id}-pre`,
+        ownerId: ob.id,
+        linked: true,
+        type: "commute",
+        title: "Commute",
+        color: "bg-orange-500 border-orange-300/50",
+        start,
+        end: ob.start,
+        meta: `${ob.loc1 || ob.name1 || "Start"} → ${ob.loc2 || ob.name2 || "End"}`,
+      });
+    }
+    blocks.push({
+      id: ob.id,
+      ownerId: ob.id,
+      linked: false,
+      type: "obligation",
+      title: ob.title,
+      color: "bg-red-500 border-red-300/50",
+      start: ob.start,
+      end: ob.end,
+      meta: ob.place || "Obligation",
+    });
+    if (ob.commuteMode === "post" || ob.commuteMode === "both") {
+      blocks.push({
+        id: `${ob.id}-post`,
+        ownerId: ob.id,
+        linked: true,
+        type: "commute",
+        title: "Commute",
+        color: "bg-orange-500 border-orange-300/50",
+        start: ob.end,
+        end: (ob.end + ob.commuteMinutes) % DAY_MINUTES,
+        meta: `${ob.loc1 || ob.name1 || "Start"} → ${ob.loc2 || ob.name2 || "End"}`,
+      });
+    }
+  }
+  return blocks;
+}
+
+function rangesForBlock(block) {
+  if (block.end >= block.start) return [{ ...block, actualStart: block.start, actualEnd: block.end }];
+  return [
+    { ...block, actualStart: block.start, actualEnd: DAY_MINUTES },
+    { ...block, actualStart: 0, actualEnd: block.end },
+  ];
+}
+
+function overlaps(a, b) {
+  return a.actualStart < b.actualEnd && b.actualStart < a.actualEnd;
+}
+
+function Modal({ open, title, children, onClose, wide = false }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className={`w-full ${wide ? "max-w-5xl" : "max-w-xl"} rounded-3xl border border-zinc-700 bg-zinc-900 shadow-2xl`}>
+        <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
+          <h2 className="text-xl font-semibold text-white">{title}</h2>
+          <button onClick={onClose} className="rounded-xl border border-zinc-700 px-3 py-1 text-zinc-300 hover:border-zinc-500">Close</button>
+        </div>
+        <div className="p-6">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function LabeledInput({ label, inputRef, className = "", ...props }) {
+  return (
+    <label className="block">
+      <div className="mb-1 text-sm text-zinc-400">{label}</div>
+      <input ref={inputRef} {...props} className={`w-full rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-red-500 ${className}`} />
+    </label>
+  );
+}
+
+function Timeline({ obligations, onSelect }) {
+  const blocks = getBlockRows(obligations);
+  return (
+    <div className="space-y-2">
+      <div className="flex h-14 w-full overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-800">
+        {Array.from({ length: 96 }).map((_, i) => {
+          const slotStart = i * 15;
+          const slotEnd = slotStart + 15;
+          const covering = blocks.find((block) =>
+            rangesForBlock(block).some((r) => r.actualStart < slotEnd && slotStart < r.actualEnd)
+          );
+          return (
+            <button
+              key={i}
+              onClick={() => covering && onSelect(covering.ownerId)}
+              className={`h-full flex-1 border-r border-zinc-700/70 ${covering ? covering.color : "bg-zinc-700/70"} ${covering ? "hover:brightness-110" : ""}`}
+              title={covering ? `${covering.title} · ${covering.meta}` : `${formatMinutes(slotStart)}–${formatMinutes(slotEnd % DAY_MINUTES)}`}
+            />
+          );
+        })}
+      </div>
+      <div className="flex justify-between px-1 text-xs text-zinc-400">
+        <span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span>
+      </div>
+    </div>
+  );
+}
+
+function PresetTable({ presets, onUpdate, onDelete }) {
+  return (
+    <div className="space-y-3">
+      {presets.length === 0 ? <div className="text-zinc-500">No presets yet.</div> : presets.map((p) => (
+        <div key={p.id} className="grid gap-2 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4 md:grid-cols-7">
+          <input value={p.loc1} onChange={(e) => onUpdate(p.id, { loc1: e.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2" placeholder="Loc 1" />
+          <input value={p.name1} onChange={(e) => onUpdate(p.id, { name1: e.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2" placeholder="Name 1" />
+          <input value={p.loc2} onChange={(e) => onUpdate(p.id, { loc2: e.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2" placeholder="Loc 2" />
+          <input value={p.name2} onChange={(e) => onUpdate(p.id, { name2: e.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2" placeholder="Name 2" />
+          <select value={p.mot} onChange={(e) => onUpdate(p.id, { mot: e.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2">
+            <option>Driving</option><option>Walking</option><option>Bicycling</option><option>Transit</option>
+          </select>
+          <input value={String(p.timeMinutes)} onChange={(e) => onUpdate(p.id, { timeMinutes: Number(e.target.value) || 0 })} className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2" placeholder="Minutes" />
+          <button onClick={() => onDelete(p.id)} className="rounded-xl border border-zinc-700 px-3 py-2 text-zinc-300 hover:border-zinc-500">Delete</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function TimeSlotPlannerApp() {
+  const [obligations, setObligations] = useState(() => loadLocal(STORAGE_KEYS.obligations, []));
+  const [presets, setPresets] = useState(() => loadLocal(STORAGE_KEYS.presets, []));
+  const [settings, setSettings] = useState(() => loadLocal(STORAGE_KEYS.settings, {
+    notificationsEnabled: false,
+    notifyLead: "30",
+    notifyTarget: "event",
+  }));
+  const [mapsReady, setMapsReady] = useState(false);
+  const [mapsError, setMapsError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const [title, setTitle] = useState("");
+  const [startText, setStartText] = useState("0900");
+  const [endText, setEndText] = useState("1700");
+  const [place, setPlace] = useState("");
+
+  const [selectedId, setSelectedId] = useState(null);
+  const [saveCommuteOpen, setSaveCommuteOpen] = useState(false);
+  const [saveModeOpen, setSaveModeOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const [loc1, setLoc1] = useState("");
+  const [loc2, setLoc2] = useState("");
+  const [name1, setName1] = useState("");
+  const [name2, setName2] = useState("");
+  const [mot, setMot] = useState("Driving");
+  const [timeText, setTimeText] = useState("");
+  const [lookupBusy, setLookupBusy] = useState(false);
+
+  const loc1Ref = useRef(null);
+  const loc2Ref = useRef(null);
+  const notifiedRef = useRef({});
+
+  const start = useMemo(() => parseTime(startText), [startText]);
+  const end = useMemo(() => parseTime(endText), [endText]);
+  const duration = durationBetween(start, end);
+
+  useEffect(() => saveLocal(STORAGE_KEYS.obligations, obligations), [obligations]);
+  useEffect(() => saveLocal(STORAGE_KEYS.presets, presets), [presets]);
+  useEffect(() => saveLocal(STORAGE_KEYS.settings, settings), [settings]);
+
+  useEffect(() => {
+    if (GOOGLE_MAPS_API_KEY.includes("PASTE_YOUR")) return;
+    loadGoogleMaps(
+      GOOGLE_MAPS_API_KEY,
+      () => {
+        setMapsReady(true);
+        setMapsError("");
+      },
+      () => setMapsError("Google Maps failed to load.")
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!mapsReady || !window.google?.maps?.places) return;
+    [loc1Ref, loc2Ref].forEach((ref) => {
+      if (!ref.current || ref.current.dataset.ac === "1") return;
+      const ac = new window.google.maps.places.Autocomplete(ref.current, { fields: ["formatted_address", "name"] });
+      ac.addListener("place_changed", () => {
+        const place = ac.getPlace();
+        const value = place?.formatted_address || place?.name || ref.current.value;
+        ref.current.value = value;
+        ref.current.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      ref.current.dataset.ac = "1";
+    });
+  }, [mapsReady, saveCommuteOpen]);
+
+  useEffect(() => {
+    if (!settings.notificationsEnabled || typeof Notification === "undefined") return;
+    const interval = setInterval(() => {
+      const now = new Date();
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const lead = Number(settings.notifyLead || 30);
+      obligations.forEach((ob) => {
+        const target = settings.notifyTarget === "commute" && (ob.commuteMode === "pre" || ob.commuteMode === "both")
+          ? ((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES
+          : ob.start;
+        const fireAt = ((target - lead) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES;
+        const key = `${ob.id}-${fireAt}-${now.toDateString()}`;
+        if (Math.abs(nowMinutes - fireAt) <= 0 && !notifiedRef.current[key]) {
+          notifiedRef.current[key] = true;
+          if (Notification.permission === "granted") {
+            new Notification(`Upcoming: ${ob.title}`, {
+              body: settings.notifyTarget === "commute" ? `Leave at ${formatMinutes(target)}.` : `Starts at ${formatMinutes(ob.start)}.`,
+            });
+          }
+        }
+      });
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [obligations, settings]);
+
+  function requestNotificationPermission() {
+    if (typeof Notification === "undefined") {
+      setMessage("Notifications are not supported in this viewer. They should work better on a hosted site like GitHub Pages if the browser allows them.");
+      return;
+    }
+    Notification.requestPermission().then((permission) => {
+      setMessage(permission === "granted" ? "Notifications enabled." : "Notifications were not allowed.");
+    });
+  }
+
+  function resetCommuteFields() {
+    setLoc1("");
+    setLoc2("");
+    setName1("");
+    setName2("");
+    setMot("Driving");
+    setTimeText("");
+  }
+
+  function baseObligationValid() {
+    if (!title.trim()) return "Set what you are doing.";
+    if (start == null || end == null) return "Set valid start and end times.";
+    if (!duration || duration <= 0) return "Start and end must create a real block.";
+    return "";
+  }
+
+  function checkOverlap(candidate) {
+    const pieces = getBlockRows([candidate]).flatMap(rangesForBlock);
+    for (const ob of obligations) {
+      if (ob.id === candidate.id) continue;
+      const other = getBlockRows([ob]).flatMap(rangesForBlock);
+      for (const a of pieces) for (const b of other) if (overlaps(a, b)) return `${ob.title} (${formatMinutes(b.actualStart)}–${formatMinutes(b.actualEnd)})`;
+    }
+    return "";
+  }
+
+  function saveObligation(commuteMode = null) {
+    const err = baseObligationValid();
+    if (err) {
+      setMessage(err);
+      return;
+    }
+    const commuteMinutes = Number(timeText);
+    if (commuteMode && (!Number.isFinite(commuteMinutes) || commuteMinutes <= 0)) {
+      setMessage("To save with commute, time must be set.");
+      return;
+    }
+    const ob = {
+      id: uid(),
+      title: title.trim(),
+      place: place.trim(),
+      start,
+      end,
+      commuteMode,
+      commuteMinutes: commuteMode ? commuteMinutes : 0,
+      loc1: loc1.trim(),
+      loc2: loc2.trim(),
+      name1: name1.trim(),
+      name2: name2.trim(),
+      mot: mot.trim(),
+    };
+    const overlap = checkOverlap(ob);
+    if (overlap) {
+      setMessage(`Overlap detected with ${overlap}.`);
+      return;
+    }
+    setObligations((curr) => [...curr, ob]);
+    setMessage("Saved to bar graph.");
+    setSaveModeOpen(false);
+    setSaveCommuteOpen(false);
+    resetCommuteFields();
+  }
+
+  function tryOpenSaveWithCommute() {
+    const err = baseObligationValid();
+    if (err) {
+      setMessage(err);
+      return;
+    }
+    setSaveCommuteOpen(true);
+  }
+
+  function savePreset() {
+    const minutes = Number(timeText);
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      setMessage("Preset requires time.");
+      return;
+    }
+    const hasLocations = normalize(loc1) && normalize(loc2);
+    const hasNames = normalize(name1) && normalize(name2);
+    if (!hasLocations && !hasNames) {
+      setMessage("Preset requires both locations or both nicknames.");
+      return;
+    }
+    const draft = { id: uid(), loc1: loc1.trim(), loc2: loc2.trim(), name1: name1.trim(), name2: name2.trim(), mot: mot.trim() || "Driving", timeMinutes: minutes };
+    const existing = findPreset(presets, draft);
+    if (existing) {
+      const replace = window.confirm("A matching preset already exists. Replace it?");
+      if (!replace) return;
+      setPresets((curr) => curr.map((p) => (p.id === existing.id ? { ...existing, ...draft, id: existing.id } : p)));
+      setMessage("Preset updated.");
+      return;
+    }
+    if (presets.length >= MAX_PRESETS) {
+      setMessage(`You can store up to ${MAX_PRESETS} presets.`);
+      return;
+    }
+    setPresets((curr) => [...curr, draft]);
+    setMessage("Preset saved locally.");
+  }
+
+  async function apiSearch() {
+    if (!normalize(loc1) || !normalize(loc2)) {
+      setMessage("API search requires both locations.");
+      return;
+    }
+    const existing = findPreset(presets, { loc1, loc2, name1, name2, mot });
+    if (existing) {
+      setTimeText(String(existing.timeMinutes));
+      setMessage("Loaded time from saved preset.");
+      return;
+    }
+    if (!mapsReady || !window.google?.maps) {
+      setMessage("Google Maps is not ready. Add your API key at the top of this file. The canvas preview may also be stricter than GitHub Pages.");
+      return;
+    }
+    setLookupBusy(true);
+    try {
+      const service = new window.google.maps.DirectionsService();
+      const modeMap = {
+        Driving: window.google.maps.TravelMode.DRIVING,
+        Walking: window.google.maps.TravelMode.WALKING,
+        Bicycling: window.google.maps.TravelMode.BICYCLING,
+        Transit: window.google.maps.TravelMode.TRANSIT,
+      };
+      const result = await service.route({ origin: loc1, destination: loc2, travelMode: modeMap[mot] || window.google.maps.TravelMode.DRIVING });
+      const leg = result.routes?.[0]?.legs?.[0];
+      const minutes = Math.max(1, Math.round((leg?.duration?.value || 0) / 60));
+      if (!minutes) throw new Error("No duration returned.");
+      setTimeText(String(minutes));
+      setMessage("API calculated time and filled the time box.");
+    } catch (e) {
+      setMessage(e?.message || "API search failed.");
+    } finally {
+      setLookupBusy(false);
+    }
+  }
+
+  function updatePreset(id, patch) {
+    setPresets((curr) => curr.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  }
+
+  function deletePreset(id) {
+    setPresets((curr) => curr.filter((p) => p.id !== id));
+  }
+
+  const selected = obligations.find((o) => o.id === selectedId) || null;
+
+  return (
+    <div className="min-h-screen bg-zinc-950 p-6 text-zinc-100 md:p-10">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <div className="rounded-3xl border border-zinc-800 bg-zinc-900/90 p-6 shadow-2xl">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.28em] text-zinc-500">Daily planner</p>
+              <h1 className="mt-2 text-3xl font-bold">Obligations and commute bar</h1>
+              <p className="mt-2 text-zinc-400">The canvas preview may not fully support Google Maps or browser notifications. GitHub Pages is a better target for live testing.</p>
+            </div>
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4 text-sm">
+              <div className="font-semibold">API key location</div>
+              <code className="mt-2 block rounded-xl bg-zinc-900 px-3 py-2 text-xs text-red-300">const GOOGLE_MAPS_API_KEY = "PASTE_YOUR_GOOGLE_MAPS_API_KEY_HERE";</code>
+              {mapsReady ? <div className="mt-2 text-emerald-300">Google Maps loaded.</div> : <div className="mt-2 text-amber-300">{mapsError || "Google Maps inactive until you replace the placeholder key."}</div>}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
+          <div className="space-y-6 rounded-3xl border border-zinc-800 bg-zinc-900/90 p-6 shadow-2xl">
+            <LabeledInput label="What are you doing?" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Work, class, lab..." />
+            <LabeledInput label="Where is it?" value={place} onChange={(e) => setPlace(e.target.value)} placeholder="Optional place label" />
+            <div className="grid grid-cols-2 gap-3">
+              <LabeledInput label="Start time" value={startText} onChange={(e) => setStartText(e.target.value)} placeholder="0900 or 9:00 AM" />
+              <LabeledInput label="End time" value={endText} onChange={(e) => setEndText(e.target.value)} placeholder="1700 or 5:00 PM" />
+            </div>
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-300">
+              {start != null && end != null && duration ? (
+                <div className="space-y-1">
+                  <div><span className="text-zinc-500">Block:</span> {formatMinutes(start)}–{formatMinutes(end)}</div>
+                  <div><span className="text-zinc-500">Duration:</span> {duration} minutes</div>
+                  <div><span className="text-zinc-500">Share of day:</span> {((duration / DAY_MINUTES) * 100).toFixed(1)}%</div>
+                </div>
+              ) : <div className="text-amber-300">Enter valid times.</div>}
+            </div>
+            {message && <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-200">{message}</div>}
+            <div className="grid grid-cols-3 gap-3">
+              <button onClick={() => saveObligation(null)} className="rounded-2xl bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500">Save</button>
+              <button onClick={tryOpenSaveWithCommute} className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 font-semibold text-zinc-300 hover:border-zinc-500">Save with commute</button>
+              <button onClick={() => setSettingsOpen(true)} className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 font-semibold text-zinc-300 hover:border-zinc-500">Settings</button>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="rounded-3xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-950 p-6 shadow-2xl">
+              <div className="mb-5 flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.28em] text-zinc-500">Output</p>
+                  <h2 className="mt-2 text-2xl font-semibold">Bar graph</h2>
+                </div>
+                <div className="text-sm text-zinc-400">Little rectangles with grey gaps, red obligations, orange commutes.</div>
+              </div>
+              <Timeline obligations={obligations} onSelect={setSelectedId} />
+            </div>
+
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-900/90 p-6 shadow-2xl">
+              <h3 className="mb-4 text-xl font-semibold">Saved obligations</h3>
+              {obligations.length === 0 ? <div className="text-zinc-500">Nothing saved yet.</div> : (
+                <div className="space-y-3">
+                  {obligations.map((o) => (
+                    <button key={o.id} onClick={() => setSelectedId(o.id)} className="block w-full rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 text-left hover:border-zinc-600">
+                      <div className="font-semibold text-white">{o.title}</div>
+                      <div className="mt-1 text-sm text-zinc-400">{formatMinutes(o.start)}–{formatMinutes(o.end)}{o.commuteMode ? ` · ${o.commuteMode} commute · ${o.commuteMinutes} min` : ""}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <Modal open={saveCommuteOpen} title="Save with commute" onClose={() => setSaveCommuteOpen(false)}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <LabeledInput inputRef={loc1Ref} label="Loc 1" value={loc1} onChange={(e) => setLoc1(e.target.value)} placeholder="Start address" />
+          <LabeledInput inputRef={loc2Ref} label="Loc 2" value={loc2} onChange={(e) => setLoc2(e.target.value)} placeholder="End address" />
+          <LabeledInput label="Name 1" value={name1} onChange={(e) => setName1(e.target.value)} placeholder="Optional nickname" />
+          <LabeledInput label="Name 2" value={name2} onChange={(e) => setName2(e.target.value)} placeholder="Optional nickname" />
+          <label className="block">
+            <div className="mb-1 text-sm text-zinc-400">MOT</div>
+            <select value={mot} onChange={(e) => setMot(e.target.value)} className="w-full rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-red-500">
+              <option>Driving</option><option>Walking</option><option>Bicycling</option><option>Transit</option>
+            </select>
+          </label>
+          <LabeledInput label="Time (minutes)" value={timeText} onChange={(e) => setTimeText(e.target.value)} placeholder="Filled by API or manual" />
+        </div>
+        <div className="mt-6 grid grid-cols-3 gap-3">
+          <button onClick={() => setSaveModeOpen(true)} className="rounded-2xl bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500">Save</button>
+          <button onClick={savePreset} className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 font-semibold text-zinc-300 hover:border-zinc-500">Preset</button>
+          <button onClick={apiSearch} disabled={lookupBusy} className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 font-semibold text-zinc-300 hover:border-zinc-500 disabled:opacity-50">{lookupBusy ? "Searching..." : "API"}</button>
+        </div>
+        <div className="mt-4 text-sm text-zinc-500">Autocomplete should help with addresses once the API key is active on a hosted site.</div>
+      </Modal>
+
+      <Modal open={saveModeOpen} title="Where should the commute go?" onClose={() => setSaveModeOpen(false)}>
+        <div className="grid gap-3 md:grid-cols-4">
+          <button onClick={() => saveObligation("pre")} className="rounded-2xl bg-sky-600 px-4 py-4 font-semibold text-white">Pre commute</button>
+          <button onClick={() => saveObligation("post")} className="rounded-2xl bg-emerald-600 px-4 py-4 font-semibold text-white">Post commute</button>
+          <button onClick={() => saveObligation("both")} className="rounded-2xl bg-violet-600 px-4 py-4 font-semibold text-white">Both</button>
+          <button onClick={() => setSaveModeOpen(false)} className="rounded-2xl border border-zinc-700 px-4 py-4 font-semibold text-zinc-300">Nevermind</button>
+        </div>
+      </Modal>
+
+      <Modal open={settingsOpen} title="Settings" onClose={() => setSettingsOpen(false)} wide>
+        <div className="mb-8 grid gap-4 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 md:grid-cols-4">
+          <label className="flex items-center gap-2 text-sm text-zinc-200">
+            <input type="checkbox" checked={settings.notificationsEnabled} onChange={(e) => setSettings((s) => ({ ...s, notificationsEnabled: e.target.checked }))} />
+            Enable notifications
+          </label>
+          <label className="block text-sm text-zinc-300">
+            <div className="mb-1 text-zinc-400">Notify</div>
+            <select value={settings.notifyLead} onChange={(e) => setSettings((s) => ({ ...s, notifyLead: e.target.value }))} className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2">
+              <option value="60">1 hour before</option>
+              <option value="30">30 mins before</option>
+              <option value="10">10 mins before</option>
+            </select>
+          </label>
+          <label className="block text-sm text-zinc-300">
+            <div className="mb-1 text-zinc-400">Target</div>
+            <select value={settings.notifyTarget} onChange={(e) => setSettings((s) => ({ ...s, notifyTarget: e.target.value }))} className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2">
+              <option value="event">Before event</option>
+              <option value="commute">Before commute start</option>
+            </select>
+          </label>
+          <button onClick={requestNotificationPermission} className="rounded-xl border border-zinc-700 px-3 py-2 text-zinc-300 hover:border-zinc-500">Allow browser notifications</button>
+        </div>
+        <div className="mb-4 flex items-center justify-between gap-4 text-sm text-zinc-400">
+          <div>Edit saved presets here. Maximum {MAX_PRESETS}.</div>
+          <button
+            disabled={presets.length >= MAX_PRESETS}
+            onClick={() => setPresets((curr) => [...curr, { id: uid(), loc1: "", loc2: "", name1: "", name2: "", mot: "Driving", timeMinutes: 0 }])}
+            className="rounded-xl border border-zinc-700 px-3 py-2 text-zinc-300 disabled:opacity-50"
+          >
+            Add preset
+          </button>
+        </div>
+        <PresetTable presets={presets} onUpdate={updatePreset} onDelete={deletePreset} />
+      </Modal>
+
+      <Modal open={!!selected} title="Edit obligation" onClose={() => setSelectedId(null)}>
+        {selected && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-300">
+              <div className="font-semibold text-white">{selected.title}</div>
+              <div className="mt-1">{formatMinutes(selected.start)}–{formatMinutes(selected.end)}</div>
+              {selected.commuteMode && <div className="mt-1">{selected.commuteMode} commute · {selected.commuteMinutes} min · {selected.mot}</div>}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setObligations((curr) => curr.filter((o) => o.id !== selected.id));
+                  setSelectedId(null);
+                }}
+                className="rounded-2xl bg-red-700 px-4 py-3 font-semibold text-white"
+              >
+                Remove linked obligation and commute
+              </button>
+              <button
+                onClick={() => {
+                  setTitle(selected.title);
+                  setPlace(selected.place || "");
+                  setStartText(toTimeInput(selected.start));
+                  setEndText(toTimeInput(selected.end));
+                  setLoc1(selected.loc1 || "");
+                  setLoc2(selected.loc2 || "");
+                  setName1(selected.name1 || "");
+                  setName2(selected.name2 || "");
+                  setMot(selected.mot || "Driving");
+                  setTimeText(selected.commuteMinutes ? String(selected.commuteMinutes) : "");
+                  setObligations((curr) => curr.filter((o) => o.id !== selected.id));
+                  setSelectedId(null);
+                }}
+                className="rounded-2xl border border-zinc-700 px-4 py-3 font-semibold text-zinc-300"
+              >
+                Edit in form
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}

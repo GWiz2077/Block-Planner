@@ -8,7 +8,6 @@
     :root {
       --bg: #09090b;
       --panel: #18181b;
-      --panel-2: #27272a;
       --line: #3f3f46;
       --text: #fafafa;
       --muted: #a1a1aa;
@@ -16,9 +15,8 @@
       --orange: #f97316;
       --green: #22c55e;
       --blue: #3b82f6;
-      --slot: #52525b;
+      --slot: #3f3f46;
     }
-
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -26,20 +24,13 @@
       background: var(--bg);
       color: var(--text);
     }
-
-    .wrap {
-      max-width: 1280px;
-      margin: 0 auto;
-      padding: 24px;
-    }
-
+    .wrap { max-width: 1320px; margin: 0 auto; padding: 24px; }
     .topbar, .panel {
       background: var(--panel);
       border: 1px solid #27272a;
       border-radius: 24px;
       box-shadow: 0 12px 30px rgba(0,0,0,.35);
     }
-
     .topbar {
       padding: 20px;
       margin-bottom: 20px;
@@ -47,14 +38,12 @@
       gap: 18px;
       grid-template-columns: 1.3fr 1fr;
     }
-
     .grid {
       display: grid;
       gap: 20px;
-      grid-template-columns: 400px 1fr;
+      grid-template-columns: 420px 1fr;
       align-items: start;
     }
-
     .panel { padding: 20px; }
     h1,h2,h3,p { margin: 0; }
     .eyebrow {
@@ -65,7 +54,6 @@
       margin-bottom: 10px;
     }
     .subtitle { color: var(--muted); margin-top: 8px; line-height: 1.45; }
-
     .api-box {
       background: #0f0f12;
       border: 1px solid #27272a;
@@ -84,21 +72,17 @@
       font-family: Consolas, monospace;
       font-size: 12px;
     }
-
     .stack { display: grid; gap: 16px; }
     .two { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
     .three { display: grid; gap: 12px; grid-template-columns: 1fr 1fr 1fr; }
     .four { display: grid; gap: 12px; grid-template-columns: repeat(4, 1fr); }
-
     label { display: block; }
     .label {
       color: var(--muted);
       font-size: 14px;
       margin-bottom: 6px;
     }
-    input, select, button, textarea {
-      font: inherit;
-    }
+    input, select, button { font: inherit; }
     input, select {
       width: 100%;
       padding: 12px 14px;
@@ -109,7 +93,6 @@
       outline: none;
     }
     input:focus, select:focus { border-color: var(--red); }
-
     button {
       border: 1px solid var(--line);
       background: #09090b;
@@ -121,11 +104,9 @@
     }
     button:hover { border-color: #71717a; }
     .btn-primary { background: var(--red); border-color: var(--red); }
-    .btn-primary:hover { filter: brightness(1.05); }
     .btn-blue { background: var(--blue); border-color: var(--blue); }
     .btn-orange { background: var(--orange); border-color: var(--orange); }
     .btn-green { background: var(--green); border-color: var(--green); color: #03130a; font-weight: 700; }
-
     .info-box, .message {
       background: #111114;
       border: 1px solid #27272a;
@@ -135,36 +116,47 @@
       color: var(--muted);
     }
     .message { color: var(--text); min-height: 48px; }
-
     .timeline-shell {
       background: linear-gradient(180deg, #18181b 0%, #111114 100%);
       border: 1px solid #27272a;
       border-radius: 24px;
       padding: 20px;
     }
-
-    .timeline {
+    .viewbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .day-card {
+      background: #111114;
+      border: 1px solid #27272a;
+      border-radius: 18px;
+      padding: 16px;
       display: grid;
-      grid-template-columns: repeat(96, 1fr);
-      gap: 2px;
-      background: #27272a;
-      padding: 2px;
+      gap: 8px;
+    }
+    .smooth-timeline {
+      position: relative;
+      height: 56px;
+      width: 100%;
+      background: #4b5563;
       border-radius: 16px;
       overflow: hidden;
+      border: 1px solid #3f3f46;
     }
-
-    .slot {
-      height: 52px;
-      background: var(--slot);
-      border: 0;
-      border-radius: 0;
-      padding: 0;
-      min-width: 0;
+    .time-block {
+      position: absolute;
+      top: 6px;
+      bottom: 6px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.18);
+      overflow: hidden;
+      cursor: pointer;
     }
-    .slot.obligation { background: var(--red); }
-    .slot.commute { background: var(--orange); }
-    .slot.empty { background: #5b5b66; }
-
+    .time-block.obligation { background: var(--red); }
+    .time-block.commute { background: var(--orange); }
     .tickrow {
       display: flex;
       justify-content: space-between;
@@ -172,7 +164,7 @@
       font-size: 12px;
       padding: 8px 2px 0;
     }
-
+    .week-stack { display: grid; gap: 14px; }
     .list-card {
       background: #111114;
       border: 1px solid #27272a;
@@ -183,7 +175,6 @@
     }
     .list-card button { margin-top: 6px; }
     .muted { color: var(--muted); }
-
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -213,7 +204,6 @@
       gap: 10px;
     }
     .modal-body { padding: 20px; }
-
     table {
       width: 100%;
       border-collapse: collapse;
@@ -227,21 +217,9 @@
     }
     th { color: var(--muted); font-weight: 600; }
     td input, td select { border-radius: 12px; padding: 9px 10px; }
-
-    .pill {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 999px;
-      background: #27272a;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
     @media (max-width: 980px) {
       .topbar, .grid { grid-template-columns: 1fr; }
       .two, .three, .four { grid-template-columns: 1fr; }
-      .timeline { grid-template-columns: repeat(48, 1fr); }
-      .slot { height: 42px; }
     }
   </style>
 </head>
@@ -254,14 +232,24 @@
         <p class="subtitle">This version is plain <code>index.html</code> so GitHub Pages can run it directly. Google autocomplete and route lookup should work after you add your API key and host it.</p>
       </div>
       <div class="api-box">
-        <div><strong>API key location</strong></div>
-        <span class="api-code">const GOOGLE_MAPS_API_KEY = "AIzaSyAi0WB8FSMlhrqllD4iI8A31oWlICFOa3o";</span>
         <div id="mapsStatus" class="subtitle" style="margin-top:10px;">Google Maps inactive until you replace the placeholder key.</div>
       </div>
     </div>
 
     <div class="grid">
       <div class="panel stack">
+        <label>
+          <div class="label">Day of the week</div>
+          <select id="dayInput">
+            <option>Monday</option>
+            <option>Tuesday</option>
+            <option>Wednesday</option>
+            <option>Thursday</option>
+            <option>Friday</option>
+            <option>Saturday</option>
+            <option>Sunday</option>
+          </select>
+        </label>
         <label>
           <div class="label">What are you doing?</div>
           <input id="titleInput" placeholder="Work, class, lab..." />
@@ -282,6 +270,7 @@
         </div>
 
         <div id="mainInfo" class="info-box">Enter valid times.</div>
+        <div id="leaveInfo" class="info-box">Leave times will appear here when a commute is added.</div>
         <div id="message" class="message"></div>
 
         <div class="three">
@@ -293,11 +282,33 @@
 
       <div class="stack">
         <div class="timeline-shell">
-          <div class="eyebrow">Output</div>
-          <h2 style="margin-bottom:8px;">Bar graph</h2>
-          <p class="subtitle" style="margin-bottom:16px;">Grey slots, red obligations, orange commutes. Click any colored slot to edit or remove the linked obligation.</p>
-          <div id="timeline" class="timeline"></div>
-          <div class="tickrow"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span></div>
+          <div class="viewbar">
+            <div>
+              <div class="eyebrow" style="margin-bottom:4px;">Output</div>
+              <h2>Schedule view</h2>
+            </div>
+            <label style="min-width:220px;">
+              <div class="label">Show</div>
+              <select id="viewModeInput">
+                <option value="day">One day</option>
+                <option value="week">Whole week</option>
+              </select>
+            </label>
+            <label style="min-width:220px;">
+              <div class="label">Shown day</div>
+              <select id="viewDayInput">
+                <option>Monday</option>
+                <option>Tuesday</option>
+                <option>Wednesday</option>
+                <option>Thursday</option>
+                <option>Friday</option>
+                <option>Saturday</option>
+                <option>Sunday</option>
+              </select>
+            </label>
+          </div>
+          <p class="subtitle" style="margin-bottom:16px;">Smooth rectangles on one dark grey bar. Click any rectangle to edit or remove the linked obligation.</p>
+          <div id="timelineHost"></div>
         </div>
 
         <div class="panel">
@@ -444,11 +455,12 @@
   <script>
     const GOOGLE_MAPS_API_KEY = "AIzaSyAi0WB8FSMlhrqllD4iI8A31oWlICFOa3o";
     const DAY_MINUTES = 24 * 60;
+    const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
     const MAX_PRESETS = 25;
     const STORAGE_KEYS = {
-      obligations: "planner-obligations-html-v1",
-      presets: "planner-presets-html-v1",
-      settings: "planner-settings-html-v1",
+      obligations: "planner-obligations-html-v2",
+      presets: "planner-presets-html-v2",
+      settings: "planner-settings-html-v2",
     };
 
     const state = {
@@ -458,6 +470,8 @@
         notificationsEnabled: false,
         notifyLead: "30",
         notifyTarget: "event",
+        viewMode: "day",
+        viewDay: "Monday",
       }),
       selectedId: null,
       mapsReady: false,
@@ -471,23 +485,24 @@
       placeInput: document.getElementById("placeInput"),
       startInput: document.getElementById("startInput"),
       endInput: document.getElementById("endInput"),
+      dayInput: document.getElementById("dayInput"),
+      viewModeInput: document.getElementById("viewModeInput"),
+      viewDayInput: document.getElementById("viewDayInput"),
       mainInfo: document.getElementById("mainInfo"),
+      leaveInfo: document.getElementById("leaveInfo"),
       message: document.getElementById("message"),
-      timeline: document.getElementById("timeline"),
+      timelineHost: document.getElementById("timelineHost"),
       obligationList: document.getElementById("obligationList"),
-
       commuteModalWrap: document.getElementById("commuteModalWrap"),
       modeModalWrap: document.getElementById("modeModalWrap"),
       settingsModalWrap: document.getElementById("settingsModalWrap"),
       editModalWrap: document.getElementById("editModalWrap"),
-
       loc1Input: document.getElementById("loc1Input"),
       loc2Input: document.getElementById("loc2Input"),
       name1Input: document.getElementById("name1Input"),
       name2Input: document.getElementById("name2Input"),
       motInput: document.getElementById("motInput"),
       timeInput: document.getElementById("timeInput"),
-
       presetTableBody: document.getElementById("presetTableBody"),
       notifEnabled: document.getElementById("notifEnabled"),
       notifLead: document.getElementById("notifLead"),
@@ -583,34 +598,32 @@
       return state.presets.find(p => presetMatches(p, query)) || null;
     }
 
-    function getBlocks() {
+    function getBlocksForObligation(ob) {
       const blocks = [];
-      state.obligations.forEach(ob => {
-        if (ob.commuteMode === "pre" || ob.commuteMode === "both") {
-          blocks.push({
-            id: `${ob.id}-pre`, ownerId: ob.id, type: "commute",
-            start: ((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES,
-            end: ob.start,
-            title: "Commute",
-            meta: `${ob.loc1 || ob.name1 || "Start"} → ${ob.loc2 || ob.name2 || "End"}`,
-          });
-        }
+      if (ob.commuteMode === "pre" || ob.commuteMode === "both") {
         blocks.push({
-          id: ob.id, ownerId: ob.id, type: "obligation",
-          start: ob.start, end: ob.end,
-          title: ob.title,
-          meta: ob.place || "Obligation",
+          id: `${ob.id}-pre`, ownerId: ob.id, type: "commute",
+          start: ((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES,
+          end: ob.start,
+          title: "Commute",
+          meta: `${ob.loc1 || ob.name1 || "Start"} → ${ob.loc2 || ob.name2 || "End"}`,
         });
-        if (ob.commuteMode === "post" || ob.commuteMode === "both") {
-          blocks.push({
-            id: `${ob.id}-post`, ownerId: ob.id, type: "commute",
-            start: ob.end,
-            end: (ob.end + ob.commuteMinutes) % DAY_MINUTES,
-            title: "Commute",
-            meta: `${ob.loc1 || ob.name1 || "Start"} → ${ob.loc2 || ob.name2 || "End"}`,
-          });
-        }
+      }
+      blocks.push({
+        id: ob.id, ownerId: ob.id, type: "obligation",
+        start: ob.start, end: ob.end,
+        title: ob.title,
+        meta: ob.place || "Obligation",
       });
+      if (ob.commuteMode === "post" || ob.commuteMode === "both") {
+        blocks.push({
+          id: `${ob.id}-post`, ownerId: ob.id, type: "commute",
+          start: ob.end,
+          end: (ob.end + ob.commuteMinutes) % DAY_MINUTES,
+          title: "Commute",
+          meta: `${ob.loc1 || ob.name1 || "Start"} → ${ob.loc2 || ob.name2 || "End"}`,
+        });
+      }
       return blocks;
     }
 
@@ -635,6 +648,7 @@
 
     function getMainDraft() {
       return {
+        day: els.dayInput.value,
         title: els.titleInput.value.trim(),
         place: els.placeInput.value.trim(),
         start: parseTime(els.startInput.value),
@@ -671,6 +685,7 @@
       }
       const ob = {
         id: uid(),
+        day: main.day,
         title: main.title,
         place: main.place,
         start: main.start,
@@ -684,33 +699,11 @@
         mot: commute.mot,
       };
 
-      const candidateBlocks = [];
-      if (ob.commuteMode === "pre" || ob.commuteMode === "both") {
-        candidateBlocks.push({ start: ((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES, end: ob.start });
-      }
-      candidateBlocks.push({ start: ob.start, end: ob.end });
-      if (ob.commuteMode === "post" || ob.commuteMode === "both") {
-        candidateBlocks.push({ start: ob.end, end: (ob.end + ob.commuteMinutes) % DAY_MINUTES });
-      }
-
-      for (const existing of state.obligations) {
-        const existingBlocks = [];
-        if (existing.commuteMode === "pre" || existing.commuteMode === "both") {
-          existingBlocks.push({ start: ((existing.start - existing.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES, end: existing.start });
-        }
-        existingBlocks.push({ start: existing.start, end: existing.end });
-        if (existing.commuteMode === "post" || existing.commuteMode === "both") {
-          existingBlocks.push({ start: existing.end, end: (existing.end + existing.commuteMinutes) % DAY_MINUTES });
-        }
-
-        for (const a of candidateBlocks) {
-          for (const b of existingBlocks) {
-            const ar = a.end >= a.start ? [{ actualStart: a.start, actualEnd: a.end }] : [{ actualStart: a.start, actualEnd: DAY_MINUTES }, { actualStart: 0, actualEnd: a.end }];
-            const br = b.end >= b.start ? [{ actualStart: b.start, actualEnd: b.end }] : [{ actualStart: b.start, actualEnd: DAY_MINUTES }, { actualStart: 0, actualEnd: b.end }];
-            if (ar.some(x => br.some(y => overlaps(x, y)))) {
-              return setMessage(`Overlap detected with ${existing.title}.`);
-            }
-          }
+      const candidateBlocks = getBlocksForObligation(ob).flatMap(blockRanges);
+      for (const existing of state.obligations.filter(x => x.day === ob.day)) {
+        const existingBlocks = getBlocksForObligation(existing).flatMap(blockRanges);
+        if (candidateBlocks.some(a => existingBlocks.some(b => overlaps(a, b)))) {
+          return setMessage(`Overlap detected with ${existing.title} on ${existing.day}.`);
         }
       }
 
@@ -749,6 +742,7 @@
       const existing = findPreset(draft);
       if (existing) {
         els.timeInput.value = String(existing.timeMinutes);
+        renderLeaveInfo();
         return setMessage("Loaded time from saved preset.");
       }
       if (!state.mapsReady || !window.google?.maps) {
@@ -772,6 +766,7 @@
         const minutes = Math.max(1, Math.round((result.routes?.[0]?.legs?.[0]?.duration?.value || 0) / 60));
         if (!minutes) throw new Error("No duration returned.");
         els.timeInput.value = String(minutes);
+        renderLeaveInfo();
         setMessage("API calculated time and filled the time box.");
       } catch (err) {
         setMessage(err?.message || "API search failed.");
@@ -789,24 +784,68 @@
         return;
       }
       els.mainInfo.innerHTML = `
+        <div><span class="muted">Day:</span> ${draft.day}</div>
         <div><span class="muted">Block:</span> ${formatMinutes(draft.start)}–${formatMinutes(draft.end)}</div>
         <div><span class="muted">Duration:</span> ${duration} minutes</div>
         <div><span class="muted">Share of day:</span> ${((duration / DAY_MINUTES) * 100).toFixed(1)}%</div>
       `;
     }
 
+    function renderLeaveInfo() {
+      const draft = getMainDraft();
+      const commute = getCommuteDraft();
+      if (draft.start == null || !Number.isFinite(commute.timeMinutes) || commute.timeMinutes <= 0) {
+        els.leaveInfo.textContent = "Leave times will appear here when a commute is added.";
+        return;
+      }
+      const leaveAt = ((draft.start - commute.timeMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES;
+      const arriveBack = draft.end != null ? (draft.end + commute.timeMinutes) % DAY_MINUTES : null;
+      els.leaveInfo.innerHTML = `
+        <div><span class="muted">Leave for pre-commute at:</span> ${formatMinutes(leaveAt)}</div>
+        <div><span class="muted">If using same time for post-commute, you get back at:</span> ${formatMinutes(arriveBack)}</div>
+      `;
+    }
+
+    function buildDayTimeline(day) {
+      const items = state.obligations.filter(ob => ob.day === day);
+      const blocks = items.flatMap(getBlocksForObligation);
+      const wrap = document.createElement("div");
+      wrap.className = "day-card";
+      const title = document.createElement("div");
+      title.innerHTML = `<strong>${day}</strong>`;
+      const bar = document.createElement("div");
+      bar.className = "smooth-timeline";
+
+      blocks.forEach(block => {
+        blockRanges(block).forEach(range => {
+          const div = document.createElement("button");
+          div.className = `time-block ${block.type}`;
+          div.style.left = `${(range.actualStart / DAY_MINUTES) * 100}%`;
+          div.style.width = `${((range.actualEnd - range.actualStart) / DAY_MINUTES) * 100}%`;
+          div.title = `${block.title} · ${block.meta} · ${formatMinutes(range.actualStart)}–${formatMinutes(range.actualEnd)}`;
+          div.addEventListener("click", () => openEdit(block.ownerId));
+          bar.appendChild(div);
+        });
+      });
+
+      const ticks = document.createElement("div");
+      ticks.className = "tickrow";
+      ticks.innerHTML = `<span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span>`;
+      wrap.appendChild(title);
+      wrap.appendChild(bar);
+      wrap.appendChild(ticks);
+      return wrap;
+    }
+
     function renderTimeline() {
-      const blocks = getBlocks();
-      els.timeline.innerHTML = "";
-      for (let i = 0; i < 96; i++) {
-        const slotStart = i * 15;
-        const slotEnd = slotStart + 15;
-        const covering = blocks.find(block => blockRanges(block).some(r => r.actualStart < slotEnd && slotStart < r.actualEnd));
-        const btn = document.createElement("button");
-        btn.className = `slot ${covering ? (covering.type === "commute" ? "commute" : "obligation") : "empty"}`;
-        btn.title = covering ? `${covering.title} · ${covering.meta}` : `${formatMinutes(slotStart)}–${formatMinutes(slotEnd % DAY_MINUTES)}`;
-        if (covering) btn.addEventListener("click", () => openEdit(covering.ownerId));
-        els.timeline.appendChild(btn);
+      els.timelineHost.innerHTML = "";
+      if (state.settings.viewMode === "day") {
+        els.timelineHost.appendChild(buildDayTimeline(state.settings.viewDay));
+      } else {
+        const week = document.createElement("div");
+        week.className = "week-stack";
+        DAYS.forEach(day => week.appendChild(buildDayTimeline(day)));
+        els.timelineHost.appendChild(week);
       }
     }
 
@@ -816,17 +855,23 @@
         els.obligationList.innerHTML = `<div class="muted">Nothing saved yet.</div>`;
         return;
       }
-      state.obligations.forEach(ob => {
-        const card = document.createElement("div");
-        card.className = "list-card";
-        card.innerHTML = `
-          <div><strong>${escapeHtml(ob.title)}</strong></div>
-          <div class="muted">${formatMinutes(ob.start)}–${formatMinutes(ob.end)}${ob.commuteMode ? ` · ${ob.commuteMode} commute · ${ob.commuteMinutes} min` : ""}</div>
-          <button>Edit</button>
-        `;
-        card.querySelector("button").addEventListener("click", () => openEdit(ob.id));
-        els.obligationList.appendChild(card);
-      });
+      state.obligations
+        .slice()
+        .sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || a.start - b.start)
+        .forEach(ob => {
+          const card = document.createElement("div");
+          card.className = "list-card";
+          const leaveText = (ob.commuteMode === "pre" || ob.commuteMode === "both")
+            ? ` · leave ${formatMinutes(((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES)}`
+            : "";
+          card.innerHTML = `
+            <div><strong>${escapeHtml(ob.title)}</strong> <span class="muted">(${escapeHtml(ob.day)})</span></div>
+            <div class="muted">${formatMinutes(ob.start)}–${formatMinutes(ob.end)}${ob.commuteMode ? ` · ${ob.commuteMode} commute · ${ob.commuteMinutes} min` : ""}${leaveText}</div>
+            <button>Edit</button>
+          `;
+          card.querySelector("button").addEventListener("click", () => openEdit(ob.id));
+          els.obligationList.appendChild(card);
+        });
     }
 
     function renderPresets() {
@@ -870,10 +915,14 @@
       state.selectedId = id;
       const ob = state.obligations.find(x => x.id === id);
       if (!ob) return;
+      const leaveText = (ob.commuteMode === "pre" || ob.commuteMode === "both")
+        ? `<div style="margin-top:6px;">Leave at ${formatMinutes(((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES)}</div>`
+        : "";
       els.editSummary.innerHTML = `
-        <div><strong>${escapeHtml(ob.title)}</strong></div>
+        <div><strong>${escapeHtml(ob.title)}</strong> <span class="muted">(${escapeHtml(ob.day)})</span></div>
         <div style="margin-top:6px;">${formatMinutes(ob.start)}–${formatMinutes(ob.end)}</div>
         ${ob.commuteMode ? `<div style="margin-top:6px;">${escapeHtml(ob.commuteMode)} commute · ${ob.commuteMinutes} min · ${escapeHtml(ob.mot)}</div>` : ""}
+        ${leaveText}
       `;
       openModal(els.editModalWrap);
     }
@@ -887,14 +936,20 @@
       els.notifEnabled.value = String(state.settings.notificationsEnabled);
       els.notifLead.value = state.settings.notifyLead;
       els.notifTarget.value = state.settings.notifyTarget;
+      els.viewModeInput.value = state.settings.viewMode;
+      els.viewDayInput.value = state.settings.viewDay;
+      els.dayInput.value = state.settings.viewDay;
     }
 
     function renderAll() {
       renderMainInfo();
+      renderLeaveInfo();
       renderTimeline();
       renderObligations();
       renderPresets();
       renderSettings();
+      saveLocal(STORAGE_KEYS.obligations, state.obligations);
+      saveLocal(STORAGE_KEYS.settings, state.settings);
     }
 
     function attachAutocomplete() {
@@ -909,38 +964,32 @@
       state.autocompleteReady = true;
     }
 
-  function bootGoogleMaps() {
-  if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY === "PASTE_YOUR_GOOGLE_MAPS_API_KEY_HERE") {
-    els.mapsStatus.textContent = "Google Maps inactive until you add your API key.";
-    return;
-  }
-
-  els.mapsStatus.textContent = "Loading Google Maps...";
-
-  if (window.google?.maps?.places) {
-    state.mapsReady = true;
-    els.mapsStatus.textContent = "Google Maps loaded.";
-    attachAutocomplete();
-    return;
-  }
-
-  const script = document.createElement("script");
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
-  script.async = true;
-  script.defer = true;
-
-  script.onload = () => {
-    state.mapsReady = true;
-    els.mapsStatus.textContent = "Google Maps loaded.";
-    attachAutocomplete();
-  };
-
-  script.onerror = () => {
-    els.mapsStatus.textContent = "Google Maps failed to load.";
-  };
-
-  document.head.appendChild(script);
-}
+    function bootGoogleMaps() {
+      if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY === "PASTE_YOUR_GOOGLE_MAPS_API_KEY_HERE") {
+        els.mapsStatus.textContent = "Google Maps inactive until you add your API key.";
+        return;
+      }
+      els.mapsStatus.textContent = "Loading Google Maps...";
+      if (window.google?.maps?.places) {
+        state.mapsReady = true;
+        els.mapsStatus.textContent = "Google Maps loaded.";
+        attachAutocomplete();
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        state.mapsReady = true;
+        els.mapsStatus.textContent = "Google Maps loaded.";
+        attachAutocomplete();
+      };
+      script.onerror = () => {
+        els.mapsStatus.textContent = "Google Maps failed to load.";
+      };
+      document.head.appendChild(script);
+    }
 
     function requestNotificationPermission() {
       if (typeof Notification === "undefined") {
@@ -957,7 +1006,9 @@
         const now = new Date();
         const nowMinutes = now.getHours() * 60 + now.getMinutes();
         const lead = Number(state.settings.notifyLead || 30);
-        state.obligations.forEach(ob => {
+        const todayIndex = now.getDay();
+        const todayName = DAYS[(todayIndex + 6) % 7];
+        state.obligations.filter(ob => ob.day === todayName).forEach(ob => {
           const target = state.settings.notifyTarget === "commute" && (ob.commuteMode === "pre" || ob.commuteMode === "both")
             ? ((ob.start - ob.commuteMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES
             : ob.start;
@@ -994,13 +1045,13 @@
     document.getElementById("allowNotifBtn").addEventListener("click", requestNotificationPermission);
     document.getElementById("removeObligationBtn").addEventListener("click", () => {
       state.obligations = state.obligations.filter(o => o.id !== state.selectedId);
-      saveLocal(STORAGE_KEYS.obligations, state.obligations);
       closeModal(els.editModalWrap);
       renderAll();
     });
     document.getElementById("editInFormBtn").addEventListener("click", () => {
       const ob = state.obligations.find(o => o.id === state.selectedId);
       if (!ob) return;
+      els.dayInput.value = ob.day;
       els.titleInput.value = ob.title;
       els.placeInput.value = ob.place || "";
       els.startInput.value = toTimeInput(ob.start);
@@ -1012,12 +1063,14 @@
       els.motInput.value = ob.mot || "Driving";
       els.timeInput.value = ob.commuteMinutes ? String(ob.commuteMinutes) : "";
       state.obligations = state.obligations.filter(o => o.id !== ob.id);
-      saveLocal(STORAGE_KEYS.obligations, state.obligations);
       closeModal(els.editModalWrap);
       renderAll();
     });
 
-    [els.titleInput, els.placeInput, els.startInput, els.endInput].forEach(el => el.addEventListener("input", renderMainInfo));
+    [els.titleInput, els.placeInput, els.startInput, els.endInput, els.dayInput, els.timeInput].forEach(el => el.addEventListener("input", () => {
+      renderMainInfo();
+      renderLeaveInfo();
+    }));
     document.querySelectorAll("[data-close]").forEach(btn => {
       btn.addEventListener("click", () => closeModal(document.getElementById(btn.dataset.close)));
     });
@@ -1033,6 +1086,16 @@
     els.notifTarget.addEventListener("change", e => {
       state.settings.notifyTarget = e.target.value;
       saveLocal(STORAGE_KEYS.settings, state.settings);
+    });
+    els.viewModeInput.addEventListener("change", e => {
+      state.settings.viewMode = e.target.value;
+      saveLocal(STORAGE_KEYS.settings, state.settings);
+      renderTimeline();
+    });
+    els.viewDayInput.addEventListener("change", e => {
+      state.settings.viewDay = e.target.value;
+      saveLocal(STORAGE_KEYS.settings, state.settings);
+      renderTimeline();
     });
 
     bootGoogleMaps();

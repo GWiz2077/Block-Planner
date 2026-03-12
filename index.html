@@ -909,14 +909,38 @@
       state.autocompleteReady = true;
     }
 
-    function bootGoogleMaps() {
-      if (GOOGLE_MAPS_API_KEY.includes("PASTE_YOUR")) return;
-      if (window.google?.maps?.places) {
-        state.mapsReady = true;
-        els.mapsStatus.textContent = "Google Maps loaded.";
-        attachAutocomplete();
-        return;
-      }
+  function bootGoogleMaps() {
+  if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY === "PASTE_YOUR_GOOGLE_MAPS_API_KEY_HERE") {
+    els.mapsStatus.textContent = "Google Maps inactive until you add your API key.";
+    return;
+  }
+
+  els.mapsStatus.textContent = "Loading Google Maps...";
+
+  if (window.google?.maps?.places) {
+    state.mapsReady = true;
+    els.mapsStatus.textContent = "Google Maps loaded.";
+    attachAutocomplete();
+    return;
+  }
+
+  const script = document.createElement("script");
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
+  script.async = true;
+  script.defer = true;
+
+  script.onload = () => {
+    state.mapsReady = true;
+    els.mapsStatus.textContent = "Google Maps loaded.";
+    attachAutocomplete();
+  };
+
+  script.onerror = () => {
+    els.mapsStatus.textContent = "Google Maps failed to load.";
+  };
+
+  document.head.appendChild(script);
+}
       const script = document.createElement("script");
       script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
       script.async = true;
